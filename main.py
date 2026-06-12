@@ -16,7 +16,7 @@ def generate_and_send_goodmorning_image():
     try:
         print("【系統】正在呼叫正宗 Gemini Imagen 3 引擎繪製早安圖...")
         
-        # 修正：最正確的 Google 官方 Imagen 3 生圖 API 端點網址
+        # 最正確的 Google 官方 Imagen 3 生圖 API 端點網址
         gemini_api_url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:generateImages?key={GEMINI_KEY}"
         
         # 精心設計的 Prompt，強烈要求 AI 把中文文字漂亮、完整地畫在圖片內
@@ -37,11 +37,10 @@ def generate_and_send_goodmorning_image():
         response = requests.post(gemini_api_url, json=gemini_payload)
         res_json = response.json()
         
-        # 安全檢查：若被防火牆擋下或金鑰有問題，改用備用防護
+        # 安全檢查：若被防火牆擋下或金鑰有問題，改用高畫質替代風景圖
         if response.status_code != 200 or "generatedImages" not in res_json:
             error_msg = res_json.get("error", {}).get("message", "未知錯誤")
             print(f"【系統提示】Google 接口拒絕，原因: {error_msg}。改用高畫質情境圖替代。")
-            # 這裡提供一個完整的、不裁切文字的精美圖床網址作為安全防護
             image_url = "https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=600&auto=format&fit=crop"
         else:
             # 成功取得 AI 畫好的圖片 Base64 數據
@@ -100,5 +99,5 @@ def home():
     return "Gemini Authentic Image Bot is Active!"
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    # 修正：強制將監聽端口固定為 10000，完美適配 Render 主機環境
+    app.run(host="0.0.0.0", port=10000)
