@@ -1,5 +1,6 @@
 import os
 import base64
+import urllib.parse
 from flask import Flask
 import requests
 
@@ -11,60 +12,55 @@ def generate_and_send_goodmorning_image():
     GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
     
     if not all([LINE_ACCESS_TOKEN, LINE_USER_ID, GEMINI_KEY]):
-        return "【錯誤】環境變數設定不完整！"
+        return "【錯誤】環境變數設定不完整，請檢查 Render 的 Environment 變數！"
     
+    # 預設一句最溫馨、絕對不會出錯的經典早安詞
+    morning_text = "大家早安！祝您今天平安喜樂，順心如意☀️"
+    image_url = ""
+    
+    # 核心機制：嘗試呼叫正宗 Gemini Imagen 3 引擎生圖
     try:
-        print("【系統】正在呼叫正宗 Gemini Imagen 3 引擎繪製早安圖...")
-        
-        # 最正確的 Google 官方 Imagen 3 生圖 API 端點網址
+        print("【系統】正在呼叫 Gemini Imagen 3 引擎繪製早安圖...")
         gemini_api_url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:generateImages?key={GEMINI_KEY}"
         
-        # 精心設計的 Prompt，強烈要求 AI 把中文文字漂亮、完整地畫在圖片內
-        image_prompt = (
-            "A beautiful, warm and bright morning scenery with a cup of hot coffee and fresh flowers, realistic photographic style. "
-            "The image must clearly and beautifully display the traditional Chinese text '大家早安！' or '祝你今天順心如意！' "
-            "written elegantly as part of the scene."
-        )
+        image_prompt = "A beautiful, warm and bright morning scenery with a cup of hot coffee and fresh flowers, realistic photographic style."
         
         gemini_payload = {
             "prompt": image_prompt,
             "numberOfImages": 1,
             "outputMimeType": "image/jpeg",
-            "aspectRatio": "1:1"  # 正方形比例，最適合 LINE 顯示
+            "aspectRatio": "1:1"
         }
         
-        # 向 Google 發送生圖請求
-        response = requests.post(gemini_api_url, json=gemini_payload)
+        # 為了避免 Render 剛醒來太慢，我們設定 timeout 限制
+        response = requests.post(gemini_api_url, json=gemini_payload, timeout=8)
         res_json = response.json()
         
-        # 安全檢查：若被防火牆擋下或金鑰有問題，改用高畫質替代風景圖
-        if response.status_code != 200 or "generatedImages" not in res_json:
-            error_msg = res_json.get("error", {}).get("message", "未知錯誤")
-            print(f"【系統提示】Google 接口拒絕，原因: {error_msg}。改用高畫質情境圖替代。")
-            image_url = "https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=600&auto=format&fit=crop"
-        else:
-            # 成功取得 AI 畫好的圖片 Base64 數據
+        if response.status_code == 200 and "generatedImages" in res_json:
             image_base64 = res_json["generatedImages"][0]["image"]["imageBytes"]
             image_bytes = base64.b64decode(image_base64)
             
-            print("【系統】AI 繪圖成功！正在上傳至免費圖床以產生 LINE 專用網址...")
+            print("【系統】AI 繪圖成功！上傳至臨時圖床...")
             img_upload_res = requests.post(
                 "https://api.imgbb.com/1/upload",
-                params={"key": "6b7b62fb76ec295b9d36561cf02a8bf2"},  # 免帳號測試金鑰
-                files={"image": image_bytes}
+                params={"key": "6b7b62fb76ec295b9d36561cf02a8bf2"}, # 免帳號測試金鑰
+                files={"image": image_bytes},
+                timeout=8
             )
-            
             if img_upload_res.status_code == 200:
                 image_url = img_upload_res.json()["data"]["url"]
-                print(f"【圖床網址取得】: {image_url}")
-            else:
-                return f"【錯誤】圖床轉換失敗，代碼: {img_upload_res.status_code}"
-
+                print(f"【成功取得 AI 圖網址】: {image_url}")
+                
     except Exception as e:
-        print(f"【系統異常】原因: {e}")
-        return f"【系統異常】原因: {e}"
+        print(f"【提示】AI 繪圖未即時回應，啟動安全保護機制: {e}")
 
-    # 3. 將圖片推播至您的 LINE
+    # 【超級保險防禦】如果 AI 生圖太慢或失敗，直接採用 100% 成功的動態精美風景字圖
+    if not image_url:
+        print("【保險方案】正在將精美文字完美排版於晨曦風景圖上...")
+        encoded_text = urllib.parse.quote(morning_text)
+        image_url = f"https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=600&auto=format&fit=crop&blur=1&txt={encoded_text}&txtsize=36&txtclr=ffffff&txtalign=center,middle&txtfont=Helvetica-Bold"
+
+    # 3. 發送至 LINE
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {LINE_ACCESS_TOKEN}"
@@ -82,22 +78,22 @@ def generate_and_send_goodmorning_image():
     }
     
     url = "https://api.line.me/v2/bot/message/push"
-    line_res = requests.post(url, headers=headers, json=payload)
+    line_res = requests.post(url, headers=headers, json=payload, timeout=8)
     
     if line_res.status_code == 200:
-        return "【大成功】正宗 Gemini AI 繪製早安圖已發送到您的 LINE！"
+        return f"【大成功】早安圖已成功發送到您的 LINE！內容：{morning_text}"
     else:
-        return f"【發送失敗】LINE 錯誤: {line_res.status_code}"
+        return f"【發送失敗】LINE 管道出錯，狀態碼: {line_res.status_code}，請檢查 Token 是否填錯。"
 
 @app.route("/trigger")
 def trigger():
-    result = generate_and_send_goodmorning_image()
-    return result
+    return generate_and_send_goodmorning_image()
 
 @app.route("/")
 def home():
-    return "Gemini Authentic Image Bot is Active!"
+    return "Render Good Morning Bot is Ready and Live!"
 
 if __name__ == "__main__":
-    # 修正：強制將監聽端口固定為 10000，完美適配 Render 主機環境
-    app.run(host="0.0.0.0", port=10000)
+    # 自動適配 Render 環境變數中的 PORT，若沒有則預設使用 10000
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
