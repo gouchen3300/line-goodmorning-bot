@@ -2,6 +2,8 @@ import os
 from flask import Flask
 import requests
 import google.generativeai as genai
+# 引入正確的生圖模組
+from google.generativeai import types
 
 app = Flask(__name__)
 
@@ -17,20 +19,19 @@ def generate_and_send_goodmorning_image():
     genai.configure(api_key=GEMINI_KEY)
     
     try:
-        print("【系統】正在呼叫 Gemini Imagen 3 直接繪製專屬早安圖...")
+        print("【系統】正在呼叫 Gemini Imagen 3 繪製專屬早安圖...")
         
-        # 這裡我們直接把早安詞的要求寫進生圖指令（Prompt）裡，讓它一體成型！
+        # 這是我們精心設計的早安圖指令
         image_prompt = (
-            "A beautiful, warm and bright morning scenery with a cup of hot coffee and beautiful flowers, realistic photographic style. "
-            "The image MUST clearly display the traditional Chinese text '祝你今天順心如意，活力滿滿！☀️' or '大家早安！☕' written elegantly on it."
+            "A beautiful, warm and bright morning scenery with a cup of hot coffee and flowers, realistic photographic style. "
+            "The image must clearly display the traditional Chinese text '大家早安！☀️' written elegantly on it."
         )
         
-        # 直接使用最新的生圖模型
-        imagen_model = genai.GenerativeModel('imagen-3.0-generate-002')
-        result = imagen_model.generate_images(
+        # 修正：使用正確的第 3 代生圖模型呼叫方式
+        result = genai.generate_images(
+            model='imagen-3.0-generate-002',
             prompt=image_prompt,
             number_of_images=1,
-            output_mime_type="image/jpeg",
             aspect_ratio="1:1"  # 正方形圖片，最適合 LINE 顯示
         )
         
