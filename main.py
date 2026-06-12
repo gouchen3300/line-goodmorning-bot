@@ -1,9 +1,6 @@
 import os
 from flask import Flask
 import requests
-import google.generativeai as genai
-# 引入正確的生圖模組
-from google.generativeai import types
 
 app = Flask(__name__)
 
@@ -14,30 +11,42 @@ def generate_and_send_goodmorning_image():
     
     if not all([LINE_ACCESS_TOKEN, LINE_USER_ID, GEMINI_KEY]):
         return "【錯誤】環境變數設定不完整！"
-
-    # 1. 初始化 Gemini API
-    genai.configure(api_key=GEMINI_KEY)
     
     try:
-        print("【系統】正在呼叫 Gemini Imagen 3 繪製專屬早安圖...")
+        print("【系統】正在透過官方網頁接口呼叫 Imagen 3 繪製專屬早安圖...")
         
-        # 這是我們精心設計的早安圖指令
+        # 這是發送給 Google 官方 Imagen 3 API 的網址
+        gemini_api_url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:generateImages?key={GEMINI_KEY}"
+        
+        # 精心設計的早安圖指令
         image_prompt = (
             "A beautiful, warm and bright morning scenery with a cup of hot coffee and flowers, realistic photographic style. "
             "The image must clearly display the traditional Chinese text '大家早安！☀️' written elegantly on it."
         )
         
-        # 修正：使用正確的第 3 代生圖模型呼叫方式
-        result = genai.generate_images(
-            model='imagen-3.0-generate-002',
-            prompt=image_prompt,
-            number_of_images=1,
-            aspect_ratio="1:1"  # 正方形圖片，最適合 LINE 顯示
-        )
+        # 依照官方標準規格準備資料
+        gemini_payload = {
+            "prompt": image_prompt,
+            "numberOfImages": 1,
+            "outputMimeType": "image/jpeg",
+            "aspectRatio": "1:1"
+        }
+        
+        # 直接向 Google 發送請求
+        response = requests.post(gemini_api_url, json=gemini_payload)
+        res_json = response.json()
+        
+        # 檢查 Google 是否有成功吐出圖片
+        if response.status_code != 200 or "generatedImages" not in res_json:
+            error_msg = res_json.get("error", {}).get("message", "未知原因")
+            return f"【生成失敗】Google API 拒絕請求，原因: {error_msg}"
+            
+        # 提取圖片的 Base64 編碼，並轉換成二進位制檔案
+        import base64
+        image_base64 = res_json["generatedImages"][0]["image"]["imageBytes"]
+        image_bytes = base64.b64decode(image_base64)
         
         # 2. 將生成的圖片上傳到臨時圖床，轉換成 LINE 可以讀取的 URL
-        image_bytes = result.generated_images[0].image.image_bytes
-        
         print("【系統】正在將圖片上傳至臨時圖床...")
         img_upload_res = requests.post(
             "https://api.imgbb.com/1/upload",
