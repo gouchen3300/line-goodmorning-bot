@@ -1,74 +1,129 @@
 import os
+import time
 import requests
-from flask import Flask
+from flask import Flask, send_file
+from PIL import Image, ImageDraw, ImageFont
 
 app = Flask(__name__)
 
-def generate_ai_morning_image():
-    LINE_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
-    LINE_USER_ID = os.environ.get("LINE_USER_ID")
-    GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") # 請確保 Render 節點有設定您的 Gemini Key
+# 設定本地暫存檔案路徑
+FONT_PATH = "/tmp/NotoSansTC-Bold.ttf"
+LOCAL_IMAGE_PATH = "/tmp/morning_output.jpg"
+
+def download_font_if_not_exists():
+    """ 確保伺服器上有繁體中文字體，如果沒有就去下載開源的思源黑體 """
+    if not os.path.exists(FONT_PATH):
+        print("【系統】正在下載繁體中文字體（思源黑體）...")
+        font_url = "https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/TraditionalChinese/NotoSansCJKtc-Bold.otf"
+        try:
+            res = requests.get(font_url, timeout=30)
+            with open(FONT_PATH, "wb") as f:
+                f.write(res.content)
+            print("【系統】字體下載完成！")
+        except Exception as e:
+            print(f"【字體下載失敗】: {e}，將使用系統預設字體（可能無法顯示中文）")
+
+def draw_center_text_with_stroke(draw, text, font, image_width, image_height):
+    """ 安全的文字置中與自動換行演算法，並加上黑色外框 """
+    # 簡單安全的文字自動換行邏輯（每行最多 10 個字）
+    max_chars_per_line = 10
+    lines = [text[i:i+max_chars_per_line] for i in range(0, len(text), max_chars_per_line)]
     
-    if not all([LINE_ACCESS_TOKEN, LINE_USER_ID, GEMINI_API_KEY]):
-        return "【錯誤】環境變數（LINE 或 Gemini API Key）設定不完整！"
+    # 估算字體大小帶來的行高
+    font_size = font.size
+    line_height = int(font_size * 1.3)
+    total_text_height = len(lines) * line_height
     
-    # 告訴 Google Imagen 3 繪圖模型的指令 (中英文並用效果最好)
-    # 這裡直接讓 AI 把中文美美地融入圖片裡！
-    prompt = (
-        "A beautiful, high-quality morning sunrise landscape with text written on it. "
-        "The image should be warm, peaceful, and inspiring. "
-        "In the center of the image, the following Chinese text must be beautifully and clearly displayed in a clean white font: "
-        "'大家早安！祝您今天平安喜樂，順心如意☀️'"
-    )
+    # 計算起始的 Y 座標，讓整塊文字區域在垂直方向置中
+    current_y = (image_height - total_text_height) // 2
+    
+    for line in lines:
+        # 估算這行文字的寬度 (中文字元寬度大約等於字體大小)
+        line_width = len(line) * font_size
+        x = (image_width - line_width) // 2
+        
+        # 繪製黑色文字外框 (上下左右各偏移 2 像素)，確保文字在任何背景下都極度清晰
+        for offset_x in [-2, 0, 2]:
+            for offset_y in [-2, 0, 2]:
+                draw.text((x + offset_x, current_y + offset_y), line, font=font, fill="black")
+                
+        # 繪製正中央的白色主文字
+        draw.text((x, current_y), line, font=font, fill="white")
+        current_y += line_height
+
+def generate_morning_image():
+    download_font_if_not_exists()
+    
+    # 使用高畫質晨曦風景作為固定基底底圖
+    bg_url = "https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=800&auto=format&fit=crop"
+    morning_text = "大家早安！祝您今天平安喜樂，順心如意☀️"
     
     try:
-        print("【系統】正在呼叫 Google Imagen 3 繪圖模型生成藝術早安圖...")
+        print("【系統】正在下載精美底圖並壓製文字...")
+        img_res = requests.get(bg_url, timeout=15)
         
-        # 呼叫 Google 官方的 Image Generation API 節點
-        imagen_url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:generateImages?key={GEMINI_API_KEY}"
-        
-        headers = {"Content-Type": "application/json"}
-        payload = {
-            "prompt": prompt,
-            "numberOfImages": 1,
-            "outputMimeType": "image/jpeg",
-            "aspectRatio": "4:3"
-        }
-        
-        response = requests.post(imagen_url, headers=headers, json=payload, timeout=30)
-        res_json = response.json()
-        
-        # 解析 AI 生成的圖片 Base64 數據
-        if response.status_code == 200 and "generatedImages" in res_json:
-            img_base64 = res_json["generatedImages"][0]["image"]["imageBytes"]
-            print("【系統】AI 藝術圖生成成功！正在上傳至 ImgBB 圖床...")
+        # 在記憶體中打開圖片並強制調整為標準大小 800x600
+        with open("/tmp/bg.jpg", "wb") as f:
+            f.write(img_res.content)
             
-            # 將圖片轉傳至 ImgBB 換取 LINE 需要的網址
-            img_upload_res = requests.post(
-                "https://api.imgbb.com/1/upload",
-                params={"key": "6b7b62fb76ec295b9d36561cf02a8bf2"},
-                data={"image": img_base64},
-                timeout=20
-            )
-            
-            if img_upload_res.status_code == 200:
-                final_image_url = img_upload_res.json()["data"]["url"]
-                print(f"【AI 早安圖網址】: {final_image_url}")
-            else:
-                return "【圖床錯誤】上傳失敗。"
+        img = Image.open("/tmp/bg.jpg").convert("RGB")
+        img = img.resize((800, 600))
+        draw = ImageDraw.Draw(img)
+        
+        # 載入下載好的思源黑體，字體大小設定為 42 (夠大夠吸睛)
+        if os.path.exists(FONT_PATH):
+            font = ImageFont.truetype(FONT_PATH, 42)
         else:
-            error_msg = res_json.get("error", {}).get("message", "未知原因")
-            return f"【AI 生圖失敗】原因: {error_msg}。請確認您的 API Key 是否支援 Imagen 3 模型。"
+            font = ImageFont.load_default()
             
+        # 呼叫完美的置中繪圖邏輯
+        draw_center_text_with_stroke(draw, morning_text, font, 800, 600)
+        
+        # 儲存到本地端暫存區
+        img.save(LOCAL_IMAGE_PATH, "JPEG", quality=90)
+        print("【系統】精美置中早安圖本地生成成功！")
+        return True
     except Exception as e:
-        return f"【系統異常】{e}"
+        print(f"【繪圖失敗】: {e}")
+        return False
 
-    # 发送至 LINE
-    line_headers = {
+@app.route("/morning_image.jpg")
+def serve_image():
+    """ 讓這台 Render 伺服器自己變成一個圖床，直接吐出做好的圖片 """
+    if os.path.exists(LOCAL_IMAGE_PATH):
+        return send_file(LOCAL_IMAGE_PATH, mimetype="image/jpeg")
+    return "Image not generated yet.", 404
+
+@app.route("/trigger")
+def trigger():
+    LINE_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
+    LINE_USER_ID = os.environ.get("LINE_USER_ID")
+    RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL") # Render 提供的自身網址
+    
+    if not all([LINE_ACCESS_TOKEN, LINE_USER_ID]):
+        return "【錯誤】環境變數 LINE_CHANNEL_ACCESS_TOKEN 或 LINE_USER_ID 未設定！"
+        
+    # 如果 Render 沒有自動帶入自身網址，請手動改成您自己的 Render 網址
+    if not RENDER_EXTERNAL_URL:
+        # 您可以把這裡替換成您實際的網址，例如 "https://my-free-morning-bot.onrender.com"
+        RENDER_EXTERNAL_URL = "https://" + requests.headers.get('Host', '')
+
+    # 1. 在本地端生成圖片
+    success = generate_morning_image()
+    if not success:
+        return "【失敗】圖片加工過程發生結構性錯誤。"
+        
+    # 2. 建立專屬圖片網址，並加上時間戳記防快取（讓圖片每次都一定會改變！）
+    timestamp = int(time.time())
+    final_image_url = f"{RENDER_EXTERNAL_URL.rstrip('/')}/morning_image.jpg?t={timestamp}"
+    print(f"【發送給 LINE 的全新網址】: {final_image_url}")
+
+    # 3. 推播給 LINE
+    headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {LINE_ACCESS_TOKEN}"
     }
-    line_payload = {
+    payload = {
         "to": LINE_USER_ID,
         "messages": [
             {
@@ -79,20 +134,16 @@ def generate_ai_morning_image():
         ]
     }
     
-    line_res = requests.post("https://api.line.me/v2/bot/message/push", headers=line_headers, json=line_payload, timeout=15)
+    line_res = requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload, timeout=15)
     
     if line_res.status_code == 200:
-        return "【大成功】AI 級藝術早安圖已發送到您的 LINE！"
+        return "【大功告成】文字完美置中、加上黑邊防吃字的精美早安圖已發送！"
     else:
-        return f"【發送失敗】LINE 管道拒絕，狀態碼: {line_res.status_code}"
-
-@app.route("/trigger")
-def trigger():
-    return generate_ai_morning_image()
+        return f"【發送失敗】LINE 管道拒絕，代碼: {line_res.status_code}，詳情: {line_res.text}"
 
 @app.route("/")
 def home():
-    return "Imagen 3 AI Morning Bot is Running!"
+    return "Pure Python Local-Render Morning Bot is Running!"
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
