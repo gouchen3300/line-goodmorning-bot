@@ -6,84 +6,89 @@ from PIL import Image, ImageDraw, ImageFont
 
 app = Flask(__name__)
 
-# 【重大修正】改用專案當前目錄，絕對不會因為 Linux 權限阻擋而導致啟動失敗
-FONT_PATH = "NotoSansTC-Bold.ttf"
+# 將產出的圖片直接存在當前專案資料夾內，最安全不卡權限
 LOCAL_IMAGE_PATH = "morning_output.jpg"
 
-def download_font_if_not_exists():
-    """ 確保伺服器上有繁體中文字體，如果沒有就去下載開源的思源黑體 """
-    if not os.path.exists(FONT_PATH):
-        print("【系統】正在下載繁體中文字體（思源黑體）...")
-        # 更換為極度穩定的字體下載來源
-        font_url = "https://github.com/MelonRind/taiwan-fonts/raw/master/ttf/MicrosoftJhengHei-Regular.ttf"
-        try:
-            res = requests.get(font_url, timeout=30)
-            with open(FONT_PATH, "wb") as f:
-                f.write(res.content)
-            print("【系統】字體下載完成！")
-        except Exception as e:
-            print(f"【字體下載失敗】: {e}")
-
-def draw_center_text_with_stroke(draw, text, font, image_width, image_height):
-    """ 安全的文字置中與自動換行演算法，並加上黑色外框 """
-    max_chars_per_line = 10
-    lines = [text[i:i+max_chars_per_line] for i in range(0, len(text), max_chars_per_line)]
+def draw_safe_wrapped_text(draw, text, font, image_width, image_height):
+    """ 
+    使用 Python 內建最安全的文字長度計算，
+    自動偵測邊界換行，並將文字完美鎖定在圖片中央偏下方的安全區域。
+    """
+    lines = []
+    current_line = ""
     
-    font_size = font.size
-    line_height = int(font_size * 1.3)
+    # 逐字檢查，如果超過圖片寬度 (留 80 像素邊距) 就自動換行
+    for char in text:
+        test_line = current_line + char
+        # 使用內建的 textlength 精準計算當前字串的像素寬度
+        if draw.textlength(test_line, font=font) < (image_width - 80):
+            current_line = test_line
+        else:
+            lines.append(current_line)
+            current_line = char
+    if current_line:
+        lines.append(current_line)
+        
+    # 萬一字數真的太長被切成多行，計算出正確的總高度以進行垂直置中
+    line_height = 55
     total_text_height = len(lines) * line_height
     
-    # 讓整塊文字區域在圖片垂直中央偏下方（早安圖最標準的排版）
-    current_y = (image_height - total_text_height) // 2 + 100
+    # 將文字區塊固定放在畫面中央偏下（y=380），這是早安圖最舒適的視覺位置
+    start_y = 380 - (total_text_height // 2)
     
     for line in lines:
-        line_width = len(line) * font_size
+        # 精準計算出這行字要置中所需要的 X 座標
+        line_width = draw.textlength(line, font=font)
         x = (image_width - line_width) // 2
         
-        # 繪製黑色文字外框，防止背景太亮看不清
-        for offset_x in [-2, 0, 2]:
-            for offset_y in [-2, 0, 2]:
-                draw.text((x + offset_x, current_y + offset_y), line, font=font, fill="black")
-                
-        # 繪製正中央的白色主文字
-        draw.text((x, current_y), line, font=font, fill="white")
-        current_y += line_height
+        # 【精美度大升級】繪製 360 度立體陰影外框（上下左右、斜角全面覆蓋）
+        # 這樣做可以確保不論底圖多亮、陽光多刺眼，白色的字體都絕對清晰好看
+        for dx in [-2, -1, 0, 1, 2]:
+            for dy in [-2, -1, 0, 1, 2]:
+                if dx != 0 or dy != 0:
+                    draw.text((x + dx, start_y + dy), line, font=font, fill="black")
+                    
+        # 繪製最上層的純白亮色主文字
+        draw.text((x, start_y), line, font=font, fill="white")
+        start_y += line_height
 
 def generate_morning_image():
-    download_font_if_not_exists()
-    
-    # 高畫質晨曦風景底圖
+    # 使用高畫質且連線極度穩定的 Unsplash 官方風景圖作為底圖
     bg_url = "https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=800&auto=format&fit=crop"
     morning_text = "大家早安！祝您今天平安喜樂，順心如意☀️"
     
     try:
-        print("【系統】正在下載精美底圖...")
-        img_res = requests.get(bg_url, timeout=15, stream=True)
-        
+        print("【系統】正在下載穩定的背景底圖...")
+        img_res = requests.get(bg_url, timeout=10, stream=True)
+        if img_res.status_code != 200:
+            return False
+            
         img = Image.open(img_res.raw).convert("RGB")
-        img = img.resize((800, 600))
+        img = img.resize((800, 600)) # 強制將底圖調整為標準高畫質黃金比例
         draw = ImageDraw.Draw(img)
         
-        # 載入字體
-        if os.path.exists(FONT_PATH):
-            font = ImageFont.truetype(FONT_PATH, 42)
-        else:
+        # 載入萬用預設字體，並放大到 45 級字（大字長輩最愛）
+        # 這樣做 100% 免去下載檔案的風險，Render 絕對放行
+        try:
+            font = ImageFont.load_default(size=45)
+        except TypeError:
+            # 預防舊版本 Pillow 不支援 size 參數的萬備防禦機制
             font = ImageFont.load_default()
             
-        # 繪製完美置中字
-        draw_center_text_with_stroke(draw, morning_text, font, 800, 600)
+        print("【系統】正在進行文字排版與立體黑邊壓製...")
+        draw_safe_wrapped_text(draw, morning_text, font, 800, 600)
         
-        # 儲存到當前目錄
+        # 儲存成品
         img.save(LOCAL_IMAGE_PATH, "JPEG", quality=90)
-        print("【系統】精美早安圖本地生成成功！")
+        print("【系統】早安圖在本地伺服器端完美繪製成功！")
         return True
     except Exception as e:
-        print(f"【繪圖失敗】: {e}")
+        print(f"【系統錯誤】繪圖邏輯崩潰，原因: {e}")
         return False
 
 @app.route("/morning_image.jpg")
 def serve_image():
-    """ 讓 Render 伺服器直接變成圖床，吐出做好的圖片 """
+    """ 讓您的 Render 伺服器自己當圖床，安全又不需要密鑰 """
     if os.path.exists(LOCAL_IMAGE_PATH):
         return send_file(LOCAL_IMAGE_PATH, mimetype="image/jpeg")
     return "Image not found.", 404
@@ -95,22 +100,22 @@ def trigger():
     RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
     
     if not all([LINE_ACCESS_TOKEN, LINE_USER_ID]):
-        return "【錯誤】環境變數 LINE 未設定！"
+        return "【錯誤】Render 後台的 LINE 變數尚未設定，請檢查環境變數！"
         
     if not RENDER_EXTERNAL_URL:
         RENDER_EXTERNAL_URL = "https://" + requests.headers.get('Host', '')
 
-    # 1. 生成圖片
-    success = generate_morning_image()
-    if not success:
-        return "【失敗】圖片生成失敗。"
+    # 1. 執行純本地繪圖
+    if not generate_morning_image():
+        return "【失敗】圖片在加工時被系統阻擋。"
         
-    # 2. 加入防快取時間戳記
+    # 2. 加上獨家防快取機制：用當前秒數當後綴（?t=1718320000）
+    # 這樣 LINE 看到網址不一樣，就會強迫手機更新，圖片绝对會改變！
     timestamp = int(time.time())
     final_image_url = f"{RENDER_EXTERNAL_URL.rstrip('/')}/morning_image.jpg?t={timestamp}"
-    print(f"【LINE 圖片網址】: {final_image_url}")
+    print(f"【即將傳送給 LINE 的新鮮網址】: {final_image_url}")
 
-    # 3. 發送推播
+    # 3. 推播至您的手機
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {LINE_ACCESS_TOKEN}"
@@ -129,13 +134,13 @@ def trigger():
     line_res = requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload, timeout=15)
     
     if line_res.status_code == 200:
-        return "【大成功】字體完美置中且帶黑邊的精美早安圖已發送！"
+        return "【恭喜吳大哥！大成功】文字自動換行、永不切邊的精美早安圖已成功發送！"
     else:
-        return f"【發送失敗】LINE 拒絕，錯誤碼: {line_res.status_code}"
+        return f"【發送失敗】LINE 伺服器拒絕連線，代碼: {line_res.status_code}，請確認 Token 是否過期。"
 
 @app.route("/")
 def home():
-    return "Fix Path Morning Bot is Running!"
+    return "The Ultimate Bulletproof Morning Bot is running beautifully!"
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
