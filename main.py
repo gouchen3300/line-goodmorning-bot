@@ -7,27 +7,85 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 app = Flask(__name__)
 
-FONT_PATH = "NotoSansTC-Bold.ttf"
 LOCAL_IMAGE_PATH = "morning_output.jpg"
 
+# 備用罐頭文案（只有在 Gemini 斷線時才會啟動保底，內含逗號作為斷句依據）
 BACKUP_QUOTES = [
-    "大家早安！新的一天，祝您心情愉快，萬事順心如意。",
-    "早安！願您今天充滿活力，迎來滿滿的平安與喜樂。",
-    "大家早安！把心靈迎向陽光，今天也是美好的一天。"
+    "大家早安新的一天，祝您心情愉快萬事順心如意",
+    "早安願您今天充滿活力，迎來滿滿的平安與喜樂",
+    "大家早安把心靈迎向陽光，今天也是美好的一天"
 ]
 
+# 鮮豔美觀的調色盤清單 (標題顏色, 內文顏色)
+COLOR_PALETTES = [
+    ("#FFFFFF", "#FFD700"),  # 1. 經典款：純白標題 ＋ 亮眼金黃內文
+    ("#FFFFFF", "#FF69B4"),  # 2. 嬌豔款：純白標題 ＋ 鮮豔桃粉內文
+    ("#FFFFFF", "#FF4500"),  # 3. 活力款：純白標題 ＋ 太陽亮橘內文
+    ("#FFFFFF", "#00FF7F"),  # 4. 清爽款：純白標題 ＋ 螢光嫩綠內文
+    ("#FFFFFF", "#00FFFF")   # 5. 明亮款：純白標題 ＋ 璀璨明藍內文
+]
+
+# 14款權威開源字型雲端網址（免上傳！程式啟動自動高速下載）
+CLOUD_TITLE_URLS = [
+    "https://github.com/google/fonts/raw/main/ofl/notosanstc/NotoSansTC%5Bwght%5D.ttf",
+    "https://github.com/ButTaiwan/genseki-font/raw/master/font/Genseki-Bold.ttf",
+    "https://github.com/ButTaiwan/genwan-font/raw/master/font/GenWan-Min.ttf",
+    "https://github.com/naenae148/Mantou-Sans/raw/main/MantouSans-Regular.ttf",
+    "https://github.com/ButTaiwan/acen-font/raw/master/font/Aceh-Bold.ttf",
+    "https://github.com/ButTaiwan/genryu-font/raw/master/font/GenRyu-Bold.ttf",
+    "https://github.com/google/fonts/raw/main/ofl/zenmarugothic/ZenMaruGothic-Bold.ttf"
+]
+
+CLOUD_BODY_URLS = [
+    "https://github.com/google/fonts/raw/main/ofl/notoseriftc/NotoSerifTC%5Bwght%5D.ttf",
+    "https://github.com/ButTaiwan/genyo-font/raw/master/font/GenYoMin-Regular.ttf",
+    "https://github.com/ButTaiwan/gensen-font/raw/master/font/Gensen-Regular.ttf",
+    "https://github.com/ButTaiwan/genwan-font/raw/master/font/GenWan-Light.ttf",
+    "https://github.com/google/fonts/raw/main/ofl/notosanstc/NotoSansTC%5Bwght%5D.ttf",
+    "https://github.com/google/fonts/raw/main/ofl/pottaone/PottaOne-Regular.ttf",
+    "https://github.com/google/fonts/raw/main/ofl/mochiyapopone/MochiyaPopOne-Regular.ttf"
+]
+
+def download_fonts():
+    """ 雲端無感載入機制：檢查本地若無字型，自動下載補齊 14 款盲盒字型 """
+    for i, url in enumerate(CLOUD_TITLE_URLS, 1):
+        path = f"title{i}.ttf"
+        if not os.path.exists(path):
+            try:
+                r = requests.get(url, timeout=15)
+                if r.status_code == 200:
+                    with open(path, 'wb') as f:
+                        f.write(r.content)
+            except Exception:
+                pass
+                
+    for i, url in enumerate(CLOUD_BODY_URLS, 1):
+        path = f"body{i}.ttf"
+        if not os.path.exists(path):
+            try:
+                r = requests.get(url, timeout=15)
+                if r.status_code == 200:
+                    with open(path, 'wb') as f:
+                        f.write(r.content)
+            except Exception:
+                pass
+
 def get_gemini_morning_quote():
-    """ 讓 Gemini AI 現場創作富有畫面感的溫暖問候語 """
+    """ 讓 Gemini 自由生成帶有單一逗號（用來精準分行）的精美語句 """
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         return random.choice(BACKUP_QUOTES)
         
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
     headers = {"Content-Type": "application/json"}
+    
+    random_topics = ["大自然晨光", "朝露與花朵", "心靈茶香", "微風與遠山", "希望與活力", "喜悅與相伴", "溫暖陽光"]
+    selected_topic = random.choice(random_topics)
+    
     payload = {
         "contents": [{
             "parts": [{
-                "text": "你是一位充滿正能量的早安圖大師。請為我寫一句送給朋友的早安問候語。要求：必須包含「早安」或「大家早安」，語氣要溫暖、積極、富有詩意與畫面感。整句話請控制在 15 到 25 個字之間，絕對不要包含任何 Emoji 貼圖、不要引號、不要星號、不要任何特殊符號，只要純中文字。"
+                "text": f"你是一位頂級的早安圖文學大師。請圍繞『{selected_topic}』這個意境，為我全新創作一句送給好友的早安問候語。要求：1. 必須包含「早安」或「大家早安」作為開頭。2. 語氣要極具詩意、溫暖。3. 總字數控制在 16 到 24 個字之間。4. 中間必須恰好包含一個全形逗號『，』用來當作前後兩句的分行依據。5. 除去這一個逗號外，絕對不要有任何其他標點符號（不要句號驚嘆號）、不要 Emoji 貼圖、引號或星號。只要純中文字。"
             }]
         }]
     }
@@ -37,60 +95,77 @@ def get_gemini_morning_quote():
         if res.status_code == 200:
             result = res.json()
             quote = result['candidates'][0]['content']['parts'][0]['text'].strip()
-            quote = quote.replace('"', '').replace('「', '').replace('見', '').replace('」', '').replace('\n', '')
-            if quote:
+            # 清理除逗號以外的雜質符號
+            for punc in ['。', '！', '、', '？', '；', '：', '.', '!', '?', '"', '「', '」', '*', '\n', ' ']:
+                quote = quote.replace(punc, '')
+            if quote and "，" in quote:
                 return quote
     except Exception as e:
-        print(f"Gemini API 錯誤: {e}")
+        print(f"Gemini API 生成出錯: {e}")
         
     return random.choice(BACKUP_QUOTES)
 
-def draw_beautiful_text(draw, text, font_path, image_width):
-    """ 動態排版：早安放大置頂、主文換行置中、黃金字體 """
+def draw_beautiful_text(draw, text, image_width):
+    """ 讀取雲端 7x7 字體與 5 色盲盒，並依據逗號自然拆成兩行（不保留標點） """
     title_text = ""
     body_text = text
     
-    for prefix in ["大家早安！", "大家早安", "早安！", "早安"]:
+    # 提取開頭標題
+    for prefix in ["大家早安", "早安"]:
         if text.startswith(prefix):
             title_text = prefix
-            body_text = text[len(prefix):].lstrip("，, ")
+            body_text = text[len(prefix):]
             break
             
     if not title_text:
-        title_text = "早安！"
+        title_text = "早安"
 
-    title_font = ImageFont.truetype(font_path, 55)
-    body_font = ImageFont.truetype(font_path, 38)
-
-    lines = []
-    current_line = ""
-    for char in body_text:
-        test_line = current_line + char
-        if draw.textlength(test_line, font=body_font) < (image_width - 120):
-            current_line = test_line
-        else:
-            lines.append(current_line)
-            current_line = char
-    if current_line:
-        lines.append(current_line)
-
-    title_height = int(title_font.size * 1.5)
-    body_line_height = int(body_font.size * 1.4)
-    total_text_height = title_height + (len(lines) * body_line_height)
+    # 隨機抽取 1~7 號字型（如果還在下載中，會自動保底預設，絕不崩潰）
+    chosen_title_file = f"title{random.randint(1, 7)}.ttf"
+    chosen_body_file = f"body{random.randint(1, 7)}.ttf"
     
+    t_font_path = chosen_title_file if os.path.exists(chosen_title_file) else None
+    b_font_path = chosen_body_file if os.path.exists(chosen_body_file) else None
+
+    if t_font_path and b_font_path:
+        title_font = ImageFont.truetype(t_font_path, 58)
+        body_font = ImageFont.truetype(b_font_path, 36)
+    else:
+        title_font = body_font = ImageFont.load_default()
+
+    # 隨機挑選一組鮮豔美觀的文字顏色組合
+    title_color, body_color = random.choice(COLOR_PALETTES)
+
+    # 【核心修改】依照逗號直接拆成兩行，並把逗號拿掉
+    lines = []
+    if "，" in body_text:
+        parts = body_text.split("，")
+        for part in parts:
+            if part.strip():
+                lines.append(part.strip())
+    else:
+        # 萬一沒抓到逗號，才啟動長度對半拆
+        mid_point = len(body_text) // 2
+        lines.append(body_text[:mid_point])
+        lines.append(body_text[mid_point:])
+
+    # 計算黃金置中排版高度
+    title_height = int(title_font.size * 1.5)
+    body_line_height = int(body_font.size * 1.5)
+    total_text_height = title_height + (len(lines) * body_line_height)
     start_y = 440 - (total_text_height // 2)
 
-    # 繪製早安大字（白字立體黑邊）
+    # 繪製標題（超立體粗黑邊 ＋ 隨機鮮豔標題色）
     title_w = draw.textlength(title_text, font=title_font)
     title_x = (image_width - title_w) // 2
     for dx in [-3, -2, -1, 0, 1, 2, 3]:
         for dy in [-3, -2, -1, 0, 1, 2, 3]:
             draw.text((title_x + dx, start_y + dy), title_text, font=title_font, fill="black")
-    draw.text((title_x, start_y), title_text, font=title_font, fill="#FFFFFF")
+    draw.text((title_x, start_y), title_text, font=title_font, fill=title_color)
     
-    start_y += title_height + 15
+    start_y += title_height + 20
 
-    # 繪製正文（鮮豔金黃色字體）
+    # 繪製內文（依照逗號分好的兩行，不帶標點符號 ＋ 隨機鮮豔內文色）
     for line in lines:
         line_w = draw.textlength(line, font=body_font)
         x = (image_width - line_w) // 2
@@ -99,23 +174,19 @@ def draw_beautiful_text(draw, text, font_path, image_width):
             for dy in [-2, -1, 0, 1, 2]:
                 draw.text((x + dx, start_y + dy), line, font=body_font, fill="black")
                     
-        draw.text((x, start_y), line, font=body_font, fill="#FFD700")
+        draw.text((x, start_y), line, font=body_font, fill=body_color)
         start_y += body_line_height
 
 def generate_morning_image(text_content):
-    """ 根據 Gemini 句子的意境，動態匹配並下載高畫質藝術背景，保證 100% 成功不留綠底 """
-    # 根據語意動態分析關鍵字
-    image_id = random.randint(10, 1000) # 隨機基礎圖庫種子
-    
-    # 意境分析管線：若出現陽光/喜悅/光芒，導向晨曦藝術圖；若出現心靈/平安，導向沉靜森林或療癒系美景
-    if any(k in text_content for k in ["陽光", "喜悅", "光芒", "微笑", "微笑"]):
-        # 挑選溫暖晨光、金色調的高畫質影像 ID
+    """ 動態匹配高畫質背景（背景啟動時全自動下載 14 款盲盒字型） """
+    download_fonts()
+
+    if any(k in text_content for k in ["陽光", "喜悅", "光芒", "微笑", "閃耀", "希望"]):
         url_pool = [
             f"https://picsum.photos/id/{random.choice([10, 28, 48, 54, 116])}/800/600",
             f"https://picsum.photos/id/{random.choice([192, 230, 235, 327, 404])}/800/600"
         ]
     else:
-        # 挑選大自然、山巒、森林等沉靜治癒影像 ID
         url_pool = [
             f"https://picsum.photos/id/{random.choice([343, 364, 411, 444, 486])}/800/600",
             f"https://picsum.photos/id/{random.choice([522, 532, 593, 619, 650])}/800/600"
@@ -124,26 +195,17 @@ def generate_morning_image(text_content):
     bg_url = random.choice(url_pool)
     
     try:
-        # 連線極度穩定、絕不阻擋的反爬蟲全球 CDN 藝術圖庫
         img_res = requests.get(bg_url, timeout=15, stream=True)
         if img_res.status_code != 200:
-            # 如果連線異常，直接改用穩定的高畫質後備圖，徹底消滅死綠色
             fallback_url = "https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?q=80&w=800"
             img_res = requests.get(fallback_url, timeout=10, stream=True)
             
         img = Image.open(img_res.raw).convert("RGB")
         img = img.resize((800, 600))
-        
-        # 微調背景：輕微加上一點柔焦效果，讓前面的金黃色字體顯得更加高級、清晰凸顯
-        img = img.filter(ImageFilter.GaussianBlur(radius=1.5))
+        img = img.filter(ImageFilter.GaussianBlur(radius=1.2))
         
         draw = ImageDraw.Draw(img)
-        
-        if os.path.exists(FONT_PATH):
-            draw_beautiful_text(draw, text_content, FONT_PATH, 800)
-        else:
-            font = ImageFont.load_default()
-            draw.text((50, 250), text_content, font=font, fill="white")
+        draw_beautiful_text(draw, text_content, 800)
             
         img.save(LOCAL_IMAGE_PATH, "JPEG", quality=92)
         return True
@@ -195,13 +257,13 @@ def trigger():
     line_res = requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload, timeout=15)
     
     if line_res.status_code == 200:
-        return f"【成功】精美意境配合早安圖已發送！今日金句：{ai_quote}"
+        return f"【成功】全新多彩雲端盲盒早安圖已發送！今日金句：{ai_quote.replace('，', ' ')}"
     else:
         return f"LINE 發送失敗: {line_res.status_code}"
 
 @app.route("/")
 def home():
-    return "Gemini Dynamic Art Morning Bot is running!"
+    return "Gemini 7x7 Auto-Download Fonts Color Bot is running!"
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
