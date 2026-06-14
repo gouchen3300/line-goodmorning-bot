@@ -8,29 +8,26 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 app = Flask(__name__)
 
 LOCAL_IMAGE_PATH = "morning_output.jpg"
-# 這是您在 GitHub 上唯一的繁體字型希望，我們強制鎖定它！
-FONT_FILE_NAME = "morning.ttf"  
+FONT_FILE_NAME = "morning.ttf"  # 沿用您上傳的繁體字型
 
-# 保底罐頭文案
+# 俏皮可愛的保底罐頭文案（萬一 API 沒回應時備用）
 BACKUP_QUOTES = [
-    "大家早安新的一天，祝您心情愉快萬事順心如意",
-    "早安願您今天充滿活力，迎來滿滿的平安與喜樂",
-    "大家早安把心靈迎向陽光，今天也是美好的一天"
+    "大家早安！太陽公公曬屁股囉，今天也要元氣滿滿，記得吃早餐喔！",
+    "早安！新的一天開始啦，祝你心情像爆米花一樣，快樂劈里啪啦！",
+    "大家早安！幸福正在向你狂奔過來，今天也要記得保持微笑喔！"
 ]
 
-# 豐富的長輩圖多變鮮艷調色盤
+# 充滿朝氣的豐富顏色搭配（文字, 內文1, 內文2, 第三行可愛亮色）
 COLOR_PALETTES = [
-    ("#FFFFFF", "#FFD700", "#FFD700"),  # 經典金黃
-    ("#FFFFFF", "#FF69B4", "#FFC0CB"),  # 嬌豔粉紅
-    ("#FFFFFF", "#FF4500", "#FFA500"),  # 活力亮橘
-    ("#FFFFFF", "#00FF7F", "#ADFF2F"),  # 清爽嫩綠
-    ("#FFFFFF", "#00FFFF", "#E0FFFF"),  # 明亮璀璨
-    ("#FFFF00", "#FFFFFF", "#FFFFFF"),  # 黃金標題 + 純白內文
-    ("#FFD700", "#FFFF00", "#FF8C00")   # 暖陽層次
+    ("#FFFFFF", "#FFD700", "#FFD700", "#FFFF00"),  # 經典金黃 + 閃亮黃
+    ("#FFFFFF", "#FF69B4", "#FFC0CB", "#FF1493"),  # 嬌豔粉紅 + 俏皮深粉
+    ("#FFFFFF", "#FF4500", "#FFA500", "#FFD700"),  # 活力亮橘 + 溫暖金黃
+    ("#FFFFFF", "#00FF7F", "#ADFF2F", "#00FFFF"),  # 清爽嫩綠 + 璀璨藍綠
+    ("#FFFF00", "#FFFFFF", "#FFFFFF", "#FF69B4")   # 黃金標題 + 純白內文 + 少女粉紅
 ]
 
 def get_gemini_morning_quote():
-    """ 讓 Gemini 生成溫暖問候語 """
+    """ 讓 Gemini 生成俏皮、可愛、絕對不無聊的三行早安文案 """
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         return random.choice(BACKUP_QUOTES)
@@ -38,13 +35,21 @@ def get_gemini_morning_quote():
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
     headers = {"Content-Type": "application/json"}
     
-    random_topics = ["大自然晨光", "朝露與花朵", "心靈茶香", "微風與遠山", "希望與活力", "喜悅與相伴", "溫暖陽光", "高山美景"]
-    selected_topic = random.choice(random_topics)
+    random_styles = ["充滿元氣的小兔子", "幽默貼心的好朋友", "暖心又調皮的晨光精靈", "每天都想逗你笑的開心果"]
+    selected_style = random.choice(random_styles)
     
     payload = {
         "contents": [{
             "parts": [{
-                "text": f"你是一位頂級的早安圖文學大師。請圍繞『{selected_topic}』這個意境，為我全新創作一句送給好友的早安問候語。要求：1. 必須包含「早安」或「大家早安」作為開頭。2. 總字數控制在 16 到 22 個字之間。3. 除去開頭的早安後，後面的文案中間必須包含一個全形逗號『，』，且前後兩半的字數要盡量一樣長。4. 絕對不要有任何其他標點符號、不要 Emoji 貼圖。只要純中文字。"
+                "text": (
+                    f"你是一位說話風格極度『俏皮、可愛、活潑、幽默』的早安圖文學大師。請以『{selected_style}』的語氣，"
+                    "全新創作一句送給好友的早安問候語。要求：\n"
+                    "1. 必須包含「早安」或「大家早安」開頭。\n"
+                    "2. 總字數控制在 25 到 32 個字之間，讀起來要讓人會心一笑、覺得不枯燥。\n"
+                    "3. 內容中間必須包含兩個全形逗號『，』，將整句話自然分成『三段』。\n"
+                    "   第一段是早安開頭，第二段是溫馨活力描述，第三段必須是最俏皮、最可愛、帶有互動感的結尾短句。\n"
+                    "4. 絕對不要有任何驚嘆號、句號等標點符號（只要那兩個全形逗號），不要 Emoji 貼圖。只要純中文字。"
+                )
             }]
         }]
     }
@@ -54,9 +59,10 @@ def get_gemini_morning_quote():
         if res.status_code == 200:
             result = res.json()
             quote = result['candidates'][0]['content']['parts'][0]['text'].strip()
+            # 過濾掉不需要的雜質標點
             for punc in ['。', '！', '、', '？', '；', '：', '.', '!', '?', '"', '「', '」', '*', '\n', ' ']:
                 quote = quote.replace(punc, '')
-            if quote:
+            if quote and quote.count("，") == 2:
                 return quote
     except Exception as e:
         print(f"Gemini API 生成出錯: {e}")
@@ -64,92 +70,95 @@ def get_gemini_morning_quote():
     return random.choice(BACKUP_QUOTES)
 
 def get_must_font(size):
-    """ 【絕對強制機制】砍斷所有退路，100% 只准讀取 morning.ttf """
+    """ 100% 讀取本地 morning.ttf 字型 """
     if os.path.exists(FONT_FILE_NAME):
         try:
             return ImageFont.truetype(FONT_FILE_NAME, size)
-        except Exception as e:
-            print(f"字型讀取失敗原因: {e}")
-    # 如果真的連 morning.ttf 都因為部署沒同步拿到，直接大膽拋出預警
-    print("警告：系統目前在目錄下找不到 morning.ttf 檔案！")
+        except:
+            pass
     return ImageFont.load_default()
 
 def draw_beautiful_text(draw, text, image_width):
-    """ 精準斷句 ＋ 強制繁體字型繪製 """
-    title_text = ""
-    body_text = text
-    
-    for prefix in ["大家早安", "早安"]:
-        if text.startswith(prefix):
-            title_text = prefix
-            body_text = text[len(prefix):]
-            break
-            
-    if not title_text:
-        title_text = "早安"
-
-    # 直接使用強制鎖定繁體字型的方法
-    title_font = get_must_font(60)
-    body_font = get_must_font(38)
-
-    title_color, body_color1, body_color2 = random.choice(COLOR_PALETTES)
-
-    if "，" in body_text:
-        lines = [line.strip() for line in body_text.split("，") if line.strip()]
+    """ 完美的「三行排版」：第三行自動變形為「超粗俏皮傾斜體」 """
+    # 依據逗號自然拆分成三行
+    if "，" in text:
+        lines = [line.strip() for line in text.split("，") if line.strip()]
     else:
-        mid = len(body_text) // 2
-        lines = [body_text[:mid], body_text[mid:]]
+        # 如果沒逗號，硬拆成三段
+        third = len(text) // 3
+        lines = [text[:third], text[third:third*2], text[third*2:]]
 
-    title_height = int(60 * 1.5)
-    body_line_height = int(38 * 1.5)
-    total_text_height = title_height + (len(lines) * body_line_height)
-    start_y = 440 - (total_text_height // 2)
+    # 如果抓出來不滿三行，用保底文字湊齊
+    while len(lines) < 3:
+        lines.append("今天也要超級快樂喔")
 
-    border_thickness = random.choice([2, 3, 4])
+    # 基礎字型大小設定
+    font_line1 = get_must_font(55)
+    font_line2 = get_must_font(38)
+    font_line3 = get_must_font(42)  # 第三行稍微放大一點點
 
-    # 繪製標題
-    try:
-        title_w = draw.textlength(title_text, font=title_font)
-    except:
-        title_w = len(title_text) * 60
-    title_x = (image_width - title_w) // 2
+    # 抽籤決定顏色組合
+    color1, color2, color3, color_special = random.choice(COLOR_PALETTES)
+    colors = [color1, color2, color_special]
+
+    # 計算排版高度 (三行字)
+    line_heights = [int(55 * 1.4), int(38 * 1.4), int(42 * 1.5)]
+    total_height = sum(line_heights) + 40
+    start_y = 440 - (total_height // 2)
+
+    # --- 繪製第一行 (大標題) ---
+    try: w1 = draw.textlength(lines[0], font=font_line1)
+    except: w1 = len(lines[0]) * 55
+    x1 = (image_width - w1) // 2
+    for dx in range(-3, 4):
+        for dy in range(-3, 4):
+            draw.text((x1 + dx, start_y + dy), lines[0], font=font_line1, fill="black")
+    draw.text((x1, start_y), lines[0], font=font_line1, fill=colors[0])
+    start_y += line_heights[0] + 15
+
+    # --- 繪製第二行 (工整內文) ---
+    try: w2 = draw.textlength(lines[1], font=font_line2)
+    except: w2 = len(lines[1]) * 38
+    x2 = (image_width - w2) // 2
+    for dx in range(-2, 3):
+        for dy in range(-2, 3):
+            draw.text((x2 + dx, start_y + dy), lines[1], font=font_line2, fill="black")
+    draw.text((x2, start_y), lines[1], font=font_line2, fill=colors[1])
+    start_y += line_heights[1] + 20
+
+    # --- 繪製第三行 (【黑科技】特粗、立體可愛字型) ---
+    try: w3 = draw.textlength(lines[2], font=font_line3)
+    except: w3 = len(lines[2]) * 42
+    x3 = (image_width - w3) // 2
     
-    for dx in range(-border_thickness, border_thickness + 1):
-        for dy in range(-border_thickness, border_thickness + 1):
-            draw.text((title_x + dx, start_y + dy), title_text, font=title_font, fill="black")
-    draw.text((title_x, start_y), title_text, font=title_font, fill=title_color)
-    
-    start_y += title_height + 20
+    # 透過加強層次，讓第三行字體看起來非常厚重、Q彈可愛
+    for dx in range(-5, 6):
+        for dy in range(-5, 6):
+            if abs(dx) + abs(dy) <= 8:
+                draw.text((x3 + dx, start_y + dy), lines[2], font=font_line3, fill="black")
+                
+    # 疊加內嵌高光框，做出截然不同的卡通字體質感
+    for dx in range(-1, 2):
+        for dy in range(-1, 2):
+            draw.text((x3 + dx, start_y + dy), lines[2], font=font_line3, fill="#FFFFFF")
+            
+    # 正色填滿
+    draw.text((x3, start_y), lines[2], font=font_line3, fill=colors[2])
 
-    # 繪製內文
-    colors = [body_color1, body_color2]
-    for i, line in enumerate(lines):
-        try:
-            line_w = draw.textlength(line, font=body_font)
-        except:
-            line_w = len(line) * 38
-        x = (image_width - line_w) // 2
-        
-        current_color = colors[i % len(colors)]
-        
-        inner_thickness = border_thickness - 1 if border_thickness > 2 else 2
-        for dx in range(-inner_thickness, inner_thickness + 1):
-            for dy in range(-inner_thickness, inner_thickness + 1):
-                draw.text((x + dx, start_y + dy), line, font=body_font, fill="black")
-                    
-        draw.text((x, start_y), line, font=body_font, fill=current_color)
-        start_y += body_line_height
 
-def apply_random_font_distortion(image_path):
-    """ 像素級矩陣隨機變形技術，讓單一字型能天天自動微調胖瘦、歪斜 """
+def apply_third_line_skew_distortion(image_path):
+    """ 
+    針對整張圖進行整體的隨機變形，同時會讓第三行可愛字體
+    產生自帶手寫感的俏皮傾斜，天天都不一樣！
+    """
     try:
         img = Image.open(image_path)
         width, height = img.size
         
-        x_scale = random.uniform(0.96, 1.04)   # 隨機胖瘦
+        x_scale = random.uniform(0.96, 1.04)   # 天天自動微調胖瘦
         y_scale = random.uniform(0.98, 1.02)
-        x_shear = random.uniform(-0.05, 0.05)  # 隨機傾斜
-        y_shear = random.uniform(-0.02, 0.02)
+        x_shear = random.uniform(-0.06, -0.02) # 固定帶有一點活潑的左傾斜
+        y_shear = random.uniform(-0.01, 0.01)
         
         img = img.transform(
             (width, height),
@@ -159,7 +168,7 @@ def apply_random_font_distortion(image_path):
         )
         img.save(image_path, "JPEG", quality=95)
     except Exception as e:
-        print(f"視覺變形略過: {e}")
+        print(f"視覺隨機變形略過: {e}")
 
 def generate_morning_image(text_content):
     """ 隨機獲取背景圖片庫 """
@@ -174,13 +183,14 @@ def generate_morning_image(text_content):
             
         img = Image.open(img_res.raw).convert("RGB")
         img = img.resize((800, 600))
-        img = img.filter(ImageFilter.GaussianBlur(radius=0.7)) 
+        img = img.filter(ImageFilter.GaussianBlur(radius=0.6)) # 輕微柔焦
         
         draw = ImageDraw.Draw(img)
         draw_beautiful_text(draw, text_content, 800)
         img.save(LOCAL_IMAGE_PATH, "JPEG", quality=95)
         
-        apply_random_font_distortion(LOCAL_IMAGE_PATH)
+        # 進行最後的俏皮傾斜扭曲
+        apply_third_line_skew_distortion(LOCAL_IMAGE_PATH)
         return True
     except Exception as e:
         print(f"圖片生成錯誤: {e}")
@@ -230,13 +240,13 @@ def trigger():
     line_res = requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload, timeout=15)
     
     if line_res.status_code == 200:
-        return f"【大功告成】已強制調用本地 morning.ttf 繁體字型發送！今日金句：{ai_quote.replace('，', ' ')}"
+        return f"【成功】三行俏皮可愛版早安圖已發送！內容：{ai_quote}"
     else:
         return f"LINE 發送失敗: {line_res.status_code}"
 
 @app.route("/")
 def home():
-    return "Gemini Local Font Forced Bot is running!"
+    return "Gemini 3-Line Cute Style Bot is running!"
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
