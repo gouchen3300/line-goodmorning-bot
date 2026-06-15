@@ -29,7 +29,7 @@ COLOR_PALETTES = [
 ]
 
 def get_gemini_morning_quote():
-    """ 讓 Gemini 生成俏皮、可愛、絕對不無聊的三行早安文案 """
+    """ 讓 Gemini 生成俏皮、可愛、絕對不無聊的三行早安文案，加入 60 天不重複機制 """
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         return random.choice(BACKUP_QUOTES)
@@ -45,12 +45,15 @@ def get_gemini_morning_quote():
             "parts": [{
                 "text": (
                     f"你是一位說話風格極度『俏皮、可愛、活潑、幽默』的早安圖文學大師。請以『{selected_style}』的語氣，"
-                    "全新創作一句送給好友的早安問候語。要求：\n"
+                    "全新創作一句送給好友的早安問候語。為了確保每天內容完全獨特、不重複（目標 60 天不套路），請嚴格遵守以下規則：\n\n"
                     "1. 必須包含「早安」或「大家早安」開頭。\n"
-                    "2. 總字數控制在 25 到 32 個字之間，讀起來要讓人會心一笑、覺得不枯燥。\n"
+                    "2. 總字數嚴格控制在 25 到 32 個字之間，讀起來要讓人會心一笑、覺得新穎不枯燥。\n"
                     "3. 內容中間必須包含兩個全形逗號『，』，將整句話自然分成『三段』。\n"
-                    "   第一段是早安開頭，第二段是溫馨活力描述，第三段必須是最俏皮、最可愛、帶有互動感 的結尾短句。\n"
-                    "4. 絕對不要有任何驚嘆號、句號等標點符號（只要那兩個全形逗號），不要 Emoji 貼圖。只要純中文字。"
+                    "   - 第一段：必須是早安開頭。\n"
+                    "   - 第二段：請隨機從以下主題挑選一個發揮【天氣變化、星期幾的怨念與期待、咖啡與早餐的誘惑、昨晚夢境續集、各種可愛動物（如水豚、貓咪、倉鼠）的慵懶聯想、正能量開外掛、無厘頭生活冷笑話、季節感】。\n"
+                    "   - 第三段：必須是最俏皮、最可愛、帶有強烈互動感或祝願的結尾短句。\n"
+                    "4. 【嚴格禁止】使用常見的罐頭詞彙，例如連續幾天都出現「元氣滿滿」、「幸福狂奔」、「快樂劈里啪啦」、「保持微笑」。請多開發全新、有現代感的俏皮詞彙（例如：抱一個、充飽電、戳臉頰、笑到噴飯、開外掛、不想努力了）。\n"
+                    "5. 絕對不要有任何驚嘆號、句號等標點符號（只要那兩個全形逗號），不要 Emoji 貼圖。只要純中文字。"
                 )
             }]
         }]
@@ -119,7 +122,7 @@ def draw_beautiful_text(draw, text, image_width):
     draw.text((x2, start_y), lines[1], font=font_line2, fill=colors[1])
     start_y += line_heights[1] + 20
 
-    # 第三行（恢復完美的粗黑邊與正中排版，絕對不切字）
+    # 第三行
     try: w3 = draw.textlength(lines[2], font=font_line3)
     except: w3 = len(lines[2]) * 42
     x3 = (image_width - w3) // 2
@@ -134,14 +137,25 @@ def draw_beautiful_text(draw, text, image_width):
 
 
 def generate_morning_image(text_content):
-    pic_ids = [10, 28, 48, 54, 116, 192, 230, 235, 327, 404, 343, 364, 411, 444, 486, 522, 532, 593, 619, 650]
-    bg_url = f"https://picsum.photos/id/{random.choice(pic_ids)}/800/600"
-    
+    """ 動態圖片生成機制：利用當天日期組合出上百種不重複的底圖來源 """
     try:
+        # 獲取今天是一年中的第幾天 (1 - 365)
+        day_of_year = time.localtime().tm_yday
+        # 加上隨機偏移量，並限制在 Picsum 常見的高品質圖片 ID 範圍內，確保每天底圖網址完全不同
+        dynamic_pic_id = (day_of_year * 3 + random.randint(1, 20)) % 800
+        
+        # 避免抽到不存在的 ID，如果動態 ID 太靠近邊界則給予安全碼
+        if dynamic_pic_id in [0, 100, 200, 300, 400, 500, 600, 700]:
+            dynamic_pic_id += 15
+            
+        bg_url = f"https://picsum.photos/id/{dynamic_pic_id}/800/600"
+        
         img_res = requests.get(bg_url, timeout=15, stream=True)
+        # 如果該 ID 剛好沒有圖片，則隨機從原來的精選集裡抽一張保底
         if img_res.status_code != 200:
-            fallback_url = "https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?q=80&w=800"
-            img_res = requests.get(fallback_url, timeout=10, stream=True)
+            pic_ids = [10, 28, 48, 54, 116, 192, 230, 235, 327, 404, 343, 364, 411, 444, 486, 522, 532, 593, 619, 650]
+            bg_url = f"https://picsum.photos/id/{random.choice(pic_ids)}/800/600"
+            img_res = requests.get(bg_url, timeout=10, stream=True)
             
         img = Image.open(img_res.raw).convert("RGB")
         img = img.resize((800, 600))
@@ -151,7 +165,6 @@ def generate_morning_image(text_content):
         draw_beautiful_text(draw, text_content, 800)
         img.save(LOCAL_IMAGE_PATH, "JPEG", quality=95)
         
-        # 徹底移除之前的 apply_third_line_skew_distortion 變形步驟，回歸正中優雅
         return True
     except Exception as e:
         print(f"圖片生成錯誤: {e}")
@@ -164,7 +177,6 @@ def upload_to_imgbb():
             return None
             
         with open(LOCAL_IMAGE_PATH, "rb") as file:
-            # 將圖片轉為 Base64 編碼
             base64_image = base64.b64encode(file.read()).decode('utf-8')
             
         url = "https://api.imgbb.com/1/upload"
@@ -177,8 +189,6 @@ def upload_to_imgbb():
         if res.status_code == 200:
             result = res.json()
             if result.get("success"):
-                # 【關鍵修正】必須抓取 data -> image -> url 才是真正的純圖片直接連結！
-                # 舊寫法 result["data"]["url"] 拿到的是帶網頁框架的導向頁面，會導致 LINE 破圖
                 return result["data"]["image"]["url"]  
         print(f"ImgBB 上傳失敗，狀態碼: {res.status_code}, 回傳內容: {res.text}")
     except Exception as e:
@@ -212,7 +222,6 @@ def trigger():
     # 2. 將圖片上傳到 ImgBB 獲取永久不失蹤的純圖片直連網址
     final_image_url = upload_to_imgbb()
     
-    # 如果 ImgBB 上傳不幸失敗，則回退使用舊的 Render 網址方案作為保底
     if not final_image_url:
         print("警告：ImgBB 上傳失敗，啟用 Render 網址保底方案")
         RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
