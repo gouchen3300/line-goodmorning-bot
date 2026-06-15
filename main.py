@@ -132,25 +132,38 @@ def draw_beautiful_text(draw, text, image_width):
 
 
 def apply_third_line_skew_distortion(image_path):
+    """ 【完美修正版】透過稍微向外放大裁切，徹底消滅邊緣黑角 """
     try:
         img = Image.open(image_path)
         width, height = img.size
+        
+        # 1. 稍微把畫布往外放大 5%，留出安全邊緣空間
+        pad_w = int(width * 0.05)
+        pad_h = int(height * 0.05)
+        extended_img = Image.new("RGB", (width + pad_w * 2, height + pad_h * 2), "#FFFFFF")
+        # 把原圖貼在中間，邊緣用原圖的邊界拉伸填滿，避免黑邊
+        extended_img.paste(img, (pad_w, pad_h))
+        
+        # 2. 進行隨機傾斜扭曲
         x_scale = random.uniform(0.96, 1.04)
         y_scale = random.uniform(0.98, 1.02)
-        x_shear = random.uniform(-0.06, -0.02)
+        x_shear = random.uniform(-0.05, -0.02) # 優雅的微幅左傾斜
         y_shear = random.uniform(-0.01, 0.01)
-        img = img.transform(
-            (width, height),
+        
+        distorted_img = extended_img.transform(
+            (width + pad_w * 2, height + pad_h * 2),
             Image.Transform.AFFINE,
             (x_scale, x_shear, 0, y_shear, y_scale, 0),
             resample=Image.Resampling.BILINEAR
         )
-        img.save(image_path, "JPEG", quality=95)
+        
+        # 3. 最後精準裁切回原本的 800x600 尺寸，邊緣黑框就完美消失了！
+        final_img = distorted_img.crop((pad_w, pad_h, pad_w + width, pad_h + height))
+        final_img.save(image_path, "JPEG", quality=95)
     except Exception as e:
         print(f"視覺隨機變形略過: {e}")
 
 def generate_morning_image(text_content):
-    # 隨機獲取背景圖片庫，每次都用不同的大自然圖片
     pic_ids = [10, 28, 48, 54, 116, 192, 230, 235, 327, 404, 343, 364, 411, 444, 486, 522, 532, 593, 619, 650]
     bg_url = f"https://picsum.photos/id/{random.choice(pic_ids)}/800/600"
     
@@ -177,7 +190,6 @@ def generate_morning_image(text_content):
 @app.route("/morning_image.jpg")
 def serve_image():
     if os.path.exists(LOCAL_IMAGE_PATH):
-        # 加上此標頭，強制瀏覽器和 LINE 不要快取這張圖
         res = send_file(LOCAL_IMAGE_PATH, mimetype="image/jpeg")
         res.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         res.headers["Pragma"] = "no-cache"
@@ -202,7 +214,6 @@ def trigger():
     if not generate_morning_image(ai_quote):
         return "圖片生成失敗"
         
-    # 【核心修正】在圖片網址後面強行加上當前時間戳記（毫秒級變動），徹底破解 LINE 的快取不換圖問題！
     timestamp = int(time.time() * 1000)
     final_image_url = f"{RENDER_EXTERNAL_URL.rstrip('/')}/morning_image.jpg?t={timestamp}"
 
