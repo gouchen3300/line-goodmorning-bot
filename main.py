@@ -12,6 +12,9 @@ LOCAL_IMAGE_PATH = "morning_output.jpg"
 FONT_FILE_NAME = "morning.ttf"  # 沿用您上傳的繁體字型
 IMGBBB_API_KEY = "5526bb902fd10d64e9b8d6edf9c38ae6"  # 已為您填入申請好的 ImgBB 金鑰
 
+# 全域狀態鎖：防止 Render 因超時重試導致連續發送重複圖片
+IS_PROCESSING = False
+
 # 俏皮可愛的保底罐頭文案
 BACKUP_QUOTES = [
     "大家早安！太陽公公曬屁股囉，今天也要元氣滿滿，記得吃早餐喔！",
@@ -139,19 +142,15 @@ def draw_beautiful_text(draw, text, image_width):
 def generate_morning_image(text_content):
     """ 動態圖片生成機制：利用當天日期組合出上百種不重複的底圖來源 """
     try:
-        # 獲取今天是一年中的第幾天 (1 - 365)
         day_of_year = time.localtime().tm_yday
-        # 加上隨機偏移量，並限制在 Picsum 常見的高品質圖片 ID 範圍內，確保每天底圖網址完全不同
-        dynamic_pic_id = (day_of_year * 3 + random.randint(1, 20)) % 800
+        dynamic_pic_id = (day_of_year * 7 + random.randint(1, 50)) % 800
         
-        # 避免抽到不存在的 ID，如果動態 ID 太靠近邊界則給予安全碼
         if dynamic_pic_id in [0, 100, 200, 300, 400, 500, 600, 700]:
-            dynamic_pic_id += 15
+            dynamic_pic_id += 19
             
         bg_url = f"https://picsum.photos/id/{dynamic_pic_id}/800/600"
         
         img_res = requests.get(bg_url, timeout=15, stream=True)
-        # 如果該 ID 剛好沒有圖片，則隨機從原來的精選集裡抽一張保底
         if img_res.status_code != 200:
             pic_ids = [10, 28, 48, 54, 116, 192, 230, 235, 327, 404, 343, 364, 411, 444, 486, 522, 532, 593, 619, 650]
             bg_url = f"https://picsum.photos/id/{random.choice(pic_ids)}/800/600"
@@ -171,7 +170,7 @@ def generate_morning_image(text_content):
         return False
 
 def upload_to_imgbb():
-    """ 讀取本地生成的圖片，穩定上傳到使用者的 ImgBB 空間並取得『真正的圖片直連網址』 """
+    """ 讀取本地生成的圖片，穩定上傳到使用者的 ImgBB 空間並取得真正的圖片直連網址 """
     try:
         if not os.path.exists(LOCAL_IMAGE_PATH):
             return None
@@ -207,51 +206,65 @@ def serve_image():
 
 @app.route("/trigger")
 def trigger():
+    global IS_PROCESSING
+    
+    # 如果前一個相同的請求還在處理中，直接攔截並拒絕，防止排程超時重試導致的連發
+    if IS_PROCESSING:
+        return "系統正在處理前一次的發送請求，此重複請求已成功攔截。", 202
+
     LINE_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
     LINE_USER_ID = os.environ.get("LINE_USER_ID")
     
     if not all([LINE_ACCESS_TOKEN, LINE_USER_ID]):
         return "環境變數尚未設定完成"
 
-    ai_quote = get_gemini_morning_quote()
+    try:
+        # 上鎖
+        IS_PROCESSING = True
 
-    # 1. 產生圖片並存在本地端
-    if not generate_morning_image(ai_quote):
-        return "圖片生成失敗"
+        ai_quote = get_gemini_morning_quote()
+
+        # 1. 產生圖片並存在本地端
+        if not generate_morning_image(ai_quote):
+            return "圖片生成失敗"
+            
+        # 2. 將圖片上傳到 ImgBB
+        final_image_url = upload_to_imgbb()
         
-    # 2. 將圖片上傳到 ImgBB 獲取永久不失蹤的純圖片直連網址
-    final_image_url = upload_to_imgbb()
-    
-    if not final_image_url:
-        print("警告：ImgBB 上傳失敗，啟用 Render 網址保底方案")
-        RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
-        if not RENDER_EXTERNAL_URL:
-            RENDER_EXTERNAL_URL = "https://" + requests.headers.get('Host', '')
-        timestamp = int(time.time() * 1000)
-        final_image_url = f"{RENDER_EXTERNAL_URL.rstrip('/')}/morning_image.jpg?t={timestamp}"
+        if not final_image_url:
+            print("警告：ImgBB 上傳失敗，啟用 Render 網址保底方案")
+            RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
+            if not RENDER_EXTERNAL_URL:
+                RENDER_EXTERNAL_URL = "https://" + requests.headers.get('Host', '')
+            timestamp = int(time.time() * 1000)
+            final_image_url = f"{RENDER_EXTERNAL_URL.rstrip('/')}/morning_image.jpg?t={timestamp}"
 
-    # 3. 發送給 LINE 官方帳號
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {LINE_ACCESS_TOKEN}"
-    }
-    payload = {
-        "to": LINE_USER_ID,
-        "messages": [
-            {
-                "type": "image",
-                "originalContentUrl": final_image_url,
-                "previewImageUrl": final_image_url
-            }
-        ]
-    }
-    
-    line_res = requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload, timeout=15)
-    
-    if line_res.status_code == 200:
-        return f"【成功】三行俏皮可愛版早安圖已發送！內容：{ai_quote} | 圖片網址：{final_image_url}"
-    else:
-        return f"LINE 發送失敗: {line_res.status_code}"
+        # 3. 發送給 LINE 官方帳號
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {LINE_ACCESS_TOKEN}"
+        }
+        payload = {
+            "to": LINE_USER_ID,
+            "messages": [
+                {
+                    "type": "image",
+                    "originalContentUrl": final_image_url,
+                    "previewImageUrl": final_image_url
+                }
+            ]
+        }
+        
+        line_res = requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload, timeout=15)
+        
+        if line_res.status_code == 200:
+            return f"【成功】三行俏皮可愛版早安圖已發送！內容：{ai_quote} | 圖片網址：{final_image_url}"
+        else:
+            return f"LINE 發送失敗: {line_res.status_code}"
+            
+    finally:
+        # 無論成功或失敗，最後一定要解鎖，下一天的排程才能繼續進來
+        IS_PROCESSING = False
 
 @app.route("/")
 def home():
