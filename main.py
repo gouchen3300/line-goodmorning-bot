@@ -10,7 +10,7 @@ app = Flask(__name__)
 LOCAL_IMAGE_PATH = "morning_output.jpg"
 FONT_FILE_NAME = "morning.ttf"  # 沿用您上傳的繁體字型
 
-# 俏皮可愛的保底罐頭文案（萬一 API 沒回應時備用）
+# 俏皮可愛的保底罐頭文案
 BACKUP_QUOTES = [
     "大家早安！太陽公公曬屁股囉，今天也要元氣滿滿，記得吃早餐喔！",
     "早安！新的一天開始啦，祝你心情像爆米花一樣，快樂劈里啪啦！",
@@ -59,7 +59,6 @@ def get_gemini_morning_quote():
         if res.status_code == 200:
             result = res.json()
             quote = result['candidates'][0]['content']['parts'][0]['text'].strip()
-            # 過濾掉不需要的雜質標點
             for punc in ['。', '！', '、', '？', '；', '：', '.', '!', '?', '"', '「', '」', '*', '\n', ' ']:
                 quote = quote.replace(punc, '')
             if quote and quote.count("，") == 2:
@@ -70,7 +69,6 @@ def get_gemini_morning_quote():
     return random.choice(BACKUP_QUOTES)
 
 def get_must_font(size):
-    """ 100% 讀取本地 morning.ttf 字型 """
     if os.path.exists(FONT_FILE_NAME):
         try:
             return ImageFont.truetype(FONT_FILE_NAME, size)
@@ -79,34 +77,27 @@ def get_must_font(size):
     return ImageFont.load_default()
 
 def draw_beautiful_text(draw, text, image_width):
-    """ 完美的「三行排版」：第三行自動變形為「超粗俏皮傾斜體」 """
-    # 依據逗號自然拆分成三行
     if "，" in text:
         lines = [line.strip() for line in text.split("，") if line.strip()]
     else:
-        # 如果沒逗號，硬拆成三段
         third = len(text) // 3
         lines = [text[:third], text[third:third*2], text[third*2:]]
 
-    # 如果抓出來不滿三行，用保底文字湊齊
     while len(lines) < 3:
         lines.append("今天也要超級快樂喔")
 
-    # 基礎字型大小設定
     font_line1 = get_must_font(55)
     font_line2 = get_must_font(38)
-    font_line3 = get_must_font(42)  # 第三行稍微放大一點點
+    font_line3 = get_must_font(42)
 
-    # 抽籤決定顏色組合
     color1, color2, color3, color_special = random.choice(COLOR_PALETTES)
     colors = [color1, color2, color_special]
 
-    # 計算排版高度 (三行字)
     line_heights = [int(55 * 1.4), int(38 * 1.4), int(42 * 1.5)]
     total_height = sum(line_heights) + 40
     start_y = 440 - (total_height // 2)
 
-    # --- 繪製第一行 (大標題) ---
+    # 第一行
     try: w1 = draw.textlength(lines[0], font=font_line1)
     except: w1 = len(lines[0]) * 55
     x1 = (image_width - w1) // 2
@@ -116,7 +107,7 @@ def draw_beautiful_text(draw, text, image_width):
     draw.text((x1, start_y), lines[0], font=font_line1, fill=colors[0])
     start_y += line_heights[0] + 15
 
-    # --- 繪製第二行 (工整內文) ---
+    # 第二行
     try: w2 = draw.textlength(lines[1], font=font_line2)
     except: w2 = len(lines[1]) * 38
     x2 = (image_width - w2) // 2
@@ -126,40 +117,28 @@ def draw_beautiful_text(draw, text, image_width):
     draw.text((x2, start_y), lines[1], font=font_line2, fill=colors[1])
     start_y += line_heights[1] + 20
 
-    # --- 繪製第三行 (【黑科技】特粗、立體可愛字型) ---
+    # 第三行
     try: w3 = draw.textlength(lines[2], font=font_line3)
     except: w3 = len(lines[2]) * 42
     x3 = (image_width - w3) // 2
-    
-    # 透過加強層次，讓第三行字體看起來非常厚重、Q彈可愛
     for dx in range(-5, 6):
         for dy in range(-5, 6):
             if abs(dx) + abs(dy) <= 8:
                 draw.text((x3 + dx, start_y + dy), lines[2], font=font_line3, fill="black")
-                
-    # 疊加內嵌高光框，做出截然不同的卡通字體質感
     for dx in range(-1, 2):
         for dy in range(-1, 2):
             draw.text((x3 + dx, start_y + dy), lines[2], font=font_line3, fill="#FFFFFF")
-            
-    # 正色填滿
     draw.text((x3, start_y), lines[2], font=font_line3, fill=colors[2])
 
 
 def apply_third_line_skew_distortion(image_path):
-    """ 
-    針對整張圖進行整體的隨機變形，同時會讓第三行可愛字體
-    產生自帶手寫感的俏皮傾斜，天天都不一樣！
-    """
     try:
         img = Image.open(image_path)
         width, height = img.size
-        
-        x_scale = random.uniform(0.96, 1.04)   # 天天自動微調胖瘦
+        x_scale = random.uniform(0.96, 1.04)
         y_scale = random.uniform(0.98, 1.02)
-        x_shear = random.uniform(-0.06, -0.02) # 固定帶有一點活潑的左傾斜
+        x_shear = random.uniform(-0.06, -0.02)
         y_shear = random.uniform(-0.01, 0.01)
-        
         img = img.transform(
             (width, height),
             Image.Transform.AFFINE,
@@ -171,7 +150,7 @@ def apply_third_line_skew_distortion(image_path):
         print(f"視覺隨機變形略過: {e}")
 
 def generate_morning_image(text_content):
-    """ 隨機獲取背景圖片庫 """
+    # 隨機獲取背景圖片庫，每次都用不同的大自然圖片
     pic_ids = [10, 28, 48, 54, 116, 192, 230, 235, 327, 404, 343, 364, 411, 444, 486, 522, 532, 593, 619, 650]
     bg_url = f"https://picsum.photos/id/{random.choice(pic_ids)}/800/600"
     
@@ -183,13 +162,12 @@ def generate_morning_image(text_content):
             
         img = Image.open(img_res.raw).convert("RGB")
         img = img.resize((800, 600))
-        img = img.filter(ImageFilter.GaussianBlur(radius=0.6)) # 輕微柔焦
+        img = img.filter(ImageFilter.GaussianBlur(radius=0.6))
         
         draw = ImageDraw.Draw(img)
         draw_beautiful_text(draw, text_content, 800)
         img.save(LOCAL_IMAGE_PATH, "JPEG", quality=95)
         
-        # 進行最後的俏皮傾斜扭曲
         apply_third_line_skew_distortion(LOCAL_IMAGE_PATH)
         return True
     except Exception as e:
@@ -199,7 +177,12 @@ def generate_morning_image(text_content):
 @app.route("/morning_image.jpg")
 def serve_image():
     if os.path.exists(LOCAL_IMAGE_PATH):
-        return send_file(LOCAL_IMAGE_PATH, mimetype="image/jpeg")
+        # 加上此標頭，強制瀏覽器和 LINE 不要快取這張圖
+        res = send_file(LOCAL_IMAGE_PATH, mimetype="image/jpeg")
+        res.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        res.headers["Pragma"] = "no-cache"
+        res.headers["Expires"] = "0"
+        return res
     return "Image not found.", 404
 
 @app.route("/trigger")
@@ -219,6 +202,7 @@ def trigger():
     if not generate_morning_image(ai_quote):
         return "圖片生成失敗"
         
+    # 【核心修正】在圖片網址後面強行加上當前時間戳記（毫秒級變動），徹底破解 LINE 的快取不換圖問題！
     timestamp = int(time.time() * 1000)
     final_image_url = f"{RENDER_EXTERNAL_URL.rstrip('/')}/morning_image.jpg?t={timestamp}"
 
