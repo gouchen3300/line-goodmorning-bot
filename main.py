@@ -2,6 +2,7 @@ import os
 import time
 import random
 import requests
+import base64  # 新增：用於將圖片轉為 Base64 格式上傳到 ImgBB
 from flask import Flask, send_file
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
@@ -9,6 +10,7 @@ app = Flask(__name__)
 
 LOCAL_IMAGE_PATH = "morning_output.jpg"
 FONT_FILE_NAME = "morning.ttf"  # 沿用您上傳的繁體字型
+IMGBBB_API_KEY = "5526bb902fd10d64e9b8d6edf9c38ae6"  # 已為您填入申請好的 ImgBB 金鑰
 
 # 俏皮可愛的保底罐頭文案
 BACKUP_QUOTES = [
@@ -155,6 +157,32 @@ def generate_morning_image(text_content):
         print(f"圖片生成錯誤: {e}")
         return False
 
+def upload_to_imgbb():
+    """ 新增：讀取本地生成的圖片，穩定上傳到使用者的 ImgBB 空間並取得永久網址 """
+    try:
+        if not os.path.exists(LOCAL_IMAGE_PATH):
+            return None
+            
+        with open(LOCAL_IMAGE_PATH, "rb") as file:
+            # 將圖片轉為 Base64 編碼
+            base64_image = base64.b64encode(file.read()).decode('utf-8')
+            
+        url = "https://api.imgbb.com/1/upload"
+        payload = {
+            "key": IMGBBB_API_KEY,
+            "image": base64_image
+        }
+        
+        res = requests.post(url, data=payload, timeout=20)
+        if res.status_code == 200:
+            result = res.json()
+            if result.get("success"):
+                return result["data"]["url"]  # 回傳永久直連網址
+        print(f"ImgBB 上傳失敗，狀態碼: {res.status_code}, 回傳內容: {res.text}")
+    except Exception as e:
+        print(f"ImgBB 上傳過程出錯: {e}")
+    return None
+
 @app.route("/morning_image.jpg")
 def serve_image():
     if os.path.exists(LOCAL_IMAGE_PATH):
@@ -169,22 +197,29 @@ def serve_image():
 def trigger():
     LINE_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
     LINE_USER_ID = os.environ.get("LINE_USER_ID")
-    RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
     
     if not all([LINE_ACCESS_TOKEN, LINE_USER_ID]):
         return "環境變數尚未設定完成"
-        
-    if not RENDER_EXTERNAL_URL:
-        RENDER_EXTERNAL_URL = "https://" + requests.headers.get('Host', '')
 
     ai_quote = get_gemini_morning_quote()
 
+    # 1. 產生圖片並存在本地端
     if not generate_morning_image(ai_quote):
         return "圖片生成失敗"
         
-    timestamp = int(time.time() * 1000)
-    final_image_url = f"{RENDER_EXTERNAL_URL.rstrip('/')}/morning_image.jpg?t={timestamp}"
+    # 2. 【核心升級】將圖片上傳到 ImgBB 獲取永久不失蹤的網址
+    final_image_url = upload_to_imgbb()
+    
+    # 如果 ImgBB 上傳不幸失敗，則回退使用舊的 Render 網址方案作為保底
+    if not final_image_url:
+        print("警告：ImgBB 上傳失敗，啟用 Render 網址保底方案")
+        RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
+        if not RENDER_EXTERNAL_URL:
+            RENDER_EXTERNAL_URL = "https://" + requests.headers.get('Host', '')
+        timestamp = int(time.time() * 1000)
+        final_image_url = f"{RENDER_EXTERNAL_URL.rstrip('/')}/morning_image.jpg?t={timestamp}"
 
+    # 3. 發送給 LINE 官方帳號
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {LINE_ACCESS_TOKEN}"
@@ -203,13 +238,13 @@ def trigger():
     line_res = requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload, timeout=15)
     
     if line_res.status_code == 200:
-        return f"【成功】三行俏皮可愛版早安圖已發送！內容：{ai_quote}"
+        return f"【成功】三行俏皮可愛版早安圖已發送！內容：{ai_quote} | 圖片網址：{final_image_url}"
     else:
         return f"LINE 發送失敗: {line_res.status_code}"
 
 @app.route("/")
 def home():
-    return "Gemini 3-Line Cute Style Bot is running!"
+    return "Gemini 3-Line Cute Style Bot with ImgBB is running!"
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
