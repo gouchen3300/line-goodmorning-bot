@@ -2,7 +2,7 @@ import os
 import time
 import random
 import requests
-import base64  # 新增：用於將圖片轉為 Base64 格式上傳到 ImgBB
+import base64  # 用於將圖片轉為 Base64 格式上傳到 ImgBB
 from flask import Flask, send_file
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
@@ -49,7 +49,7 @@ def get_gemini_morning_quote():
                     "1. 必須包含「早安」或「大家早安」開頭。\n"
                     "2. 總字數控制在 25 到 32 個字之間，讀起來要讓人會心一笑、覺得不枯燥。\n"
                     "3. 內容中間必須包含兩個全形逗號『，』，將整句話自然分成『三段』。\n"
-                    "   第一段是早安開頭，第二段是溫馨活力描述，第三段必須是最俏皮、最可愛、帶有互動感的結尾短句。\n"
+                    "   第一段是早安開頭，第二段是溫馨活力描述，第三段必須是最俏皮、最可愛、帶有互動感 的結尾短句。\n"
                     "4. 絕對不要有任何驚嘆號、句號等標點符號（只要那兩個全形逗號），不要 Emoji 貼圖。只要純中文字。"
                 )
             }]
@@ -158,7 +158,7 @@ def generate_morning_image(text_content):
         return False
 
 def upload_to_imgbb():
-    """ 新增：讀取本地生成的圖片，穩定上傳到使用者的 ImgBB 空間並取得永久網址 """
+    """ 讀取本地生成的圖片，穩定上傳到使用者的 ImgBB 空間並取得『真正的圖片直連網址』 """
     try:
         if not os.path.exists(LOCAL_IMAGE_PATH):
             return None
@@ -177,7 +177,9 @@ def upload_to_imgbb():
         if res.status_code == 200:
             result = res.json()
             if result.get("success"):
-                return result["data"]["url"]  # 回傳永久直連網址
+                # 【關鍵修正】必須抓取 data -> image -> url 才是真正的純圖片直接連結！
+                # 舊寫法 result["data"]["url"] 拿到的是帶網頁框架的導向頁面，會導致 LINE 破圖
+                return result["data"]["image"]["url"]  
         print(f"ImgBB 上傳失敗，狀態碼: {res.status_code}, 回傳內容: {res.text}")
     except Exception as e:
         print(f"ImgBB 上傳過程出錯: {e}")
@@ -207,7 +209,7 @@ def trigger():
     if not generate_morning_image(ai_quote):
         return "圖片生成失敗"
         
-    # 2. 【核心升級】將圖片上傳到 ImgBB 獲取永久不失蹤的網址
+    # 2. 將圖片上傳到 ImgBB 獲取永久不失蹤的純圖片直連網址
     final_image_url = upload_to_imgbb()
     
     # 如果 ImgBB 上傳不幸失敗，則回退使用舊的 Render 網址方案作為保底
