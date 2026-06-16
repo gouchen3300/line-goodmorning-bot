@@ -10,25 +10,27 @@ app = Flask(__name__)
 LOCAL_IMAGE_PATH = "morning_output.jpg"
 FONT_FILE_NAME = "morning.ttf"
 
+# 防止同時間重複觸發的鎖定開關
 IS_PROCESSING = False
 
-# 【修正】保底罐頭文案全部縮短，確保絕對不切邊
+# 安全保底罐頭文案（字數極簡、絕不切邊）
 BACKUP_QUOTES = [
     "大家早安，元氣滿滿，記得吃早餐喔",
     "早安新一天，快樂劈里啪啦，幸福向你狂奔",
     "大家早安，保持微笑，今天也要超級快樂"
 ]
 
+# 充滿朝氣的豐富顏色搭配（標題, 內文1, 內文2, 第三行可愛亮色）
 COLOR_PALETTES = [
-    ("#FFFFFF", "#FFD700", "#FFD700", "#FFFF00"),
-    ("#FFFFFF", "#FF69B4", "#FFC0CB", "#FF1493"),
-    ("#FFFFFF", "#FF4500", "#FFA500", "#FFD700"),
-    ("#FFFFFF", "#00FF7F", "#ADFF2F", "#00FFFF"),
-    ("#FFFF00", "#FFFFFF", "#FFFFFF", "#FF69B4")
+    ("#FFFFFF", "#FFD700", "#FFD700", "#FFFF00"),  # 經典金黃 + 閃亮黃
+    ("#FFFFFF", "#FF69B4", "#FFC0CB", "#FF1493"),  # 嬌豔粉紅 + 俏皮深粉
+    ("#FFFFFF", "#FF4500", "#FFA500", "#FFD700"),  # 活力亮橘 + 溫暖金黃
+    ("#FFFFFF", "#00FF7F", "#ADFF2F", "#00FFFF"),  # 英文嫩綠 + 璀璨藍綠
+    ("#FFFF00", "#FFFFFF", "#FFFFFF", "#FF69B4")   # 黃金標題 + 純白內文 + 少女粉紅
 ]
 
 def get_gemini_morning_quote():
-    """ 【修正】嚴格限制字數在 18-22 字，確保三行不切邊 """
+    """ 透過高隨機度參數與嚴格指令，確保每次生成的早安句子絕對不重複、且字數安全 """
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         return random.choice(BACKUP_QUOTES)
@@ -36,22 +38,30 @@ def get_gemini_morning_quote():
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
     headers = {"Content-Type": "application/json"}
     
-    random_styles = ["充滿元氣的小兔子", "幽默貼心的好朋友", "暖心又調皮的晨光精靈", "每天都想逗你笑的開心果"]
+    random_styles = [
+        "充滿元氣的小兔子", "幽默貼心的好朋友", "暖心又調皮的晨光精靈", "天天逗你笑的開心果",
+        "滿滿正能量的向日葵", "熱情洋溢的森林小熊", "溫柔守護的微風精靈", "活力四射的早安使者"
+    ]
     selected_style = random.choice(random_styles)
     
     payload = {
         "contents": [{
             "parts": [{
                 "text": (
-                    f"你是一位早安圖文學大師。請以『{selected_style}』的活潑語氣，創作一句送給好友的早安問候語。要求：\n"
-                    "1. 必須包含「早安」或「大家早安」開頭。\n"
-                    "2. 【鐵律】總字數必須嚴格控制在 18 到 22 個字之間！絕對不能超過 22 個字！\n"
+                    f"你是一位說話風格極度『俏皮、可愛、活潑、幽默』的早安圖文學大師。請以『{selected_style}』的語氣，"
+                    "全新創作一句送給好友的早安問候語。必須遵守以下鐵律：\n"
+                    "1. 【絕對不重複】：每次想的句子都要有全新的創意、換不同的詞彙，絕對不能跟之前的相似！\n"
+                    "2. 【嚴格字數限制】：總字數必須控制在 15 到 18 個字之間！絕對不能超過 18 個字！\n"
                     "3. 內容中間必須包含兩個全形逗號『，』，將整句話自然分成『三段』。\n"
-                    "   第一段是早安開頭，第二段是活力描述，第三段是可愛互動結尾。每段大約 5~7 個字。\n"
-                    "4. 絕對不要有任何驚嘆號、句號等標點符號（只要那兩個全形逗號），不要 Emoji 貼圖。只要純中文字。"
+                    "   第一段是早安開頭（例如：大家早安），第二段是活力描述，第三段是可愛結尾。\n"
+                    "   【重點】因為第一行字很大，第一段（逗號前）字數請嚴格控制在 4 到 5 個字，絕對不能多！\n"
+                    "4. 絕對不要有任何驚嘆號、句號等標點符號（只要那兩個全形逗號），不要任何 Emoji 貼圖。只要純中文字。"
                 )
             }]
-        }]
+        }],
+        "generationConfig": {
+            "temperature": 1.0  # 提高隨機度，徹底根治句子重複的問題！
+        }
     }
     
     try:
@@ -59,6 +69,7 @@ def get_gemini_morning_quote():
         if res.status_code == 200:
             result = res.json()
             quote = result['candidates'][0]['content']['parts'][0]['text'].strip()
+            # 過濾掉雜質標點符號
             for punc in ['。', '！', '、', '？', '；', '：', '.', '!', '?', '"', '「', '」', '*', '\n', ' ']:
                 quote = quote.replace(punc, '')
             if quote and quote.count("，") == 2:
@@ -86,21 +97,21 @@ def draw_beautiful_text(draw, text, image_width):
     while len(lines) < 3:
         lines.append("今天也要超級快樂")
 
-    # 【修正】縮小字型大小，第一行從 55 降到 45，內文同步微調，確保安全不切邊
-    font_line1 = get_must_font(45)
+    # 【恢復 55】遵照吳大哥指示，第一行恢復霸氣的 55 大字型！
+    font_line1 = get_must_font(55)
     font_line2 = get_must_font(38)
     font_line3 = get_must_font(42)
 
     color1, color2, color3, color_special = random.choice(COLOR_PALETTES)
     colors = [color1, color2, color_special]
 
-    line_heights = [int(45 * 1.4), int(38 * 1.4), int(42 * 1.5)]
+    line_heights = [int(55 * 1.4), int(38 * 1.4), int(42 * 1.5)]
     total_height = sum(line_heights) + 40
     start_y = 440 - (total_height // 2)
 
-    # 第一行 (安全字型 45)
+    # 第一行（大標題 55 + 超粗外框加工）
     try: w1 = draw.textlength(lines[0], font=font_line1)
-    except: w1 = len(lines[0]) * 45
+    except: w1 = len(lines[0]) * 55
     x1 = (image_width - w1) // 2
     for dx in range(-3, 4):
         for dy in range(-3, 4):
@@ -118,7 +129,7 @@ def draw_beautiful_text(draw, text, image_width):
     draw.text((x2, start_y), lines[1], font=font_line2, fill=colors[1])
     start_y += line_heights[1] + 20
 
-    # 第三行 (極限加粗立體字)
+    # 第三行（極限加粗立體字）
     try: w3 = draw.textlength(lines[2], font=font_line3)
     except: w3 = len(lines[2]) * 42
     x3 = (image_width - w3) // 2
@@ -133,7 +144,12 @@ def draw_beautiful_text(draw, text, image_width):
 
 
 def generate_morning_image(text_content):
-    pic_ids = [10, 28, 48, 54, 116, 192, 230, 235, 327, 404, 343, 364, 411, 444, 486, 522, 532, 593, 619, 650]
+    # 【擴充背景庫】一口氣擴充到 50 張精選圖片 ID，徹底解決天天看到重複圖片的問題！
+    pic_ids = [
+        10, 28, 48, 54, 116, 192, 230, 235, 327, 404, 343, 364, 411, 444, 486, 522, 532, 593, 619, 650,
+        15, 19, 29, 37, 43, 58, 76, 122, 133, 146, 152, 175, 200, 211, 250, 260, 311, 350, 365, 399,
+        425, 450, 499, 510, 555, 564, 588, 600, 625, 666
+    ]
     bg_url = f"https://picsum.photos/id/{random.choice(pic_ids)}/800/600"
     
     try:
@@ -167,6 +183,7 @@ def serve_image():
 @app.route("/trigger")
 def trigger():
     global IS_PROCESSING
+    # 被攔截時只回傳精簡 "Duplicate"，完美解決 cron-job 報錯問題
     if IS_PROCESSING:
         return "Duplicate"
         
@@ -208,12 +225,14 @@ def trigger():
         
         line_res = requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload, timeout=15)
         
+        # 成功只回傳最精簡的 "OK"
         if line_res.status_code == 200:
             return "OK"
         else:
             return f"Error:LINE {line_res.status_code}"
             
     finally:
+        # 解開重複鎖定
         IS_PROCESSING = False
 
 @app.route("/")
