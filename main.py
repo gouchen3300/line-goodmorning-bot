@@ -8,29 +8,27 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 app = Flask(__name__)
 
 LOCAL_IMAGE_PATH = "morning_output.jpg"
-FONT_FILE_NAME = "morning.ttf"  # 沿用您的繁體字型
+FONT_FILE_NAME = "morning.ttf"
 
-# 建立一個全域「防重複鎖定開關」，防止同一時間被重複戳網址
 IS_PROCESSING = False
 
-# 俏皮可愛的保底罐頭文案
+# 【修正】保底罐頭文案全部縮短，確保絕對不切邊
 BACKUP_QUOTES = [
-    "大家早安！太陽公公曬屁股囉，今天也要元氣滿滿，記得吃早餐喔！",
-    "早安！新的一天開始啦，祝你心情像爆米花一樣，快樂劈里啪啦！",
-    "大家早安！幸福正在向你狂奔過來，今天也要記得保持微笑喔！"
+    "大家早安，元氣滿滿，記得吃早餐喔",
+    "早安新一天，快樂劈里啪啦，幸福向你狂奔",
+    "大家早安，保持微笑，今天也要超級快樂"
 ]
 
-# 充滿朝氣的豐富顏色搭配（文字, 內文1, 內文2, 第三行可愛亮色）
 COLOR_PALETTES = [
-    ("#FFFFFF", "#FFD700", "#FFD700", "#FFFF00"),  # 經典金黃 + 閃亮黃
-    ("#FFFFFF", "#FF69B4", "#FFC0CB", "#FF1493"),  # 嬌豔粉紅 + 俏皮深粉
-    ("#FFFFFF", "#FF4500", "#FFA500", "#FFD700"),  # 活力亮橘 + 溫暖金黃
-    ("#FFFFFF", "#00FF7F", "#ADFF2F", "#00FFFF"),  # 清爽嫩綠 + 璀璨藍綠
-    ("#FFFF00", "#FFFFFF", "#FFFFFF", "#FF69B4")   # 黃金標題 + 純白內文 + 少女粉紅
+    ("#FFFFFF", "#FFD700", "#FFD700", "#FFFF00"),
+    ("#FFFFFF", "#FF69B4", "#FFC0CB", "#FF1493"),
+    ("#FFFFFF", "#FF4500", "#FFA500", "#FFD700"),
+    ("#FFFFFF", "#00FF7F", "#ADFF2F", "#00FFFF"),
+    ("#FFFF00", "#FFFFFF", "#FFFFFF", "#FF69B4")
 ]
 
 def get_gemini_morning_quote():
-    """ 讓 Gemini 生成俏皮、可愛、絕對不無聊的三行早安文案 """
+    """ 【修正】嚴格限制字數在 18-22 字，確保三行不切邊 """
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         return random.choice(BACKUP_QUOTES)
@@ -45,12 +43,11 @@ def get_gemini_morning_quote():
         "contents": [{
             "parts": [{
                 "text": (
-                    f"你是一位說話風格極度『俏皮、可愛、活潑、幽默』的早安圖文學大師。請以『{selected_style}』的語氣，"
-                    "全新創作一句送給好友的早安問候語。要求：\n"
+                    f"你是一位早安圖文學大師。請以『{selected_style}』的活潑語氣，創作一句送給好友的早安問候語。要求：\n"
                     "1. 必須包含「早安」或「大家早安」開頭。\n"
-                    "2. 總字數控制在 25 到 32 個字之間，讀起來要讓人會心一笑、覺得不枯燥。\n"
+                    "2. 【鐵律】總字數必須嚴格控制在 18 到 22 個字之間！絕對不能超過 22 個字！\n"
                     "3. 內容中間必須包含兩個全形逗號『，』，將整句話自然分成『三段』。\n"
-                    "   第一段是早安開頭，第二段是溫馨活力描述，第三段必須是最俏皮、最可愛、帶有互動感的結尾短句。\n"
+                    "   第一段是早安開頭，第二段是活力描述，第三段是可愛互動結尾。每段大約 5~7 個字。\n"
                     "4. 絕對不要有任何驚嘆號、句號等標點符號（只要那兩個全形逗號），不要 Emoji 貼圖。只要純中文字。"
                 )
             }]
@@ -87,22 +84,23 @@ def draw_beautiful_text(draw, text, image_width):
         lines = [text[:third], text[third:third*2], text[third*2:]]
 
     while len(lines) < 3:
-        lines.append("今天也要超級快樂喔")
+        lines.append("今天也要超級快樂")
 
-    font_line1 = get_must_font(55)
+    # 【修正】縮小字型大小，第一行從 55 降到 45，內文同步微調，確保安全不切邊
+    font_line1 = get_must_font(45)
     font_line2 = get_must_font(38)
     font_line3 = get_must_font(42)
 
     color1, color2, color3, color_special = random.choice(COLOR_PALETTES)
     colors = [color1, color2, color_special]
 
-    line_heights = [int(55 * 1.4), int(38 * 1.4), int(42 * 1.5)]
+    line_heights = [int(45 * 1.4), int(38 * 1.4), int(42 * 1.5)]
     total_height = sum(line_heights) + 40
     start_y = 440 - (total_height // 2)
 
-    # 第一行
+    # 第一行 (安全字型 45)
     try: w1 = draw.textlength(lines[0], font=font_line1)
-    except: w1 = len(lines[0]) * 55
+    except: w1 = len(lines[0]) * 45
     x1 = (image_width - w1) // 2
     for dx in range(-3, 4):
         for dy in range(-3, 4):
@@ -120,7 +118,7 @@ def draw_beautiful_text(draw, text, image_width):
     draw.text((x2, start_y), lines[1], font=font_line2, fill=colors[1])
     start_y += line_heights[1] + 20
 
-    # 第三行 (端正防切邊，極限加粗立體字)
+    # 第三行 (極限加粗立體字)
     try: w3 = draw.textlength(lines[2], font=font_line3)
     except: w3 = len(lines[2]) * 42
     x3 = (image_width - w3) // 2
@@ -168,13 +166,7 @@ def serve_image():
 
 @app.route("/trigger")
 def trigger():
-    """ 
-    【核心優化】徹底移除長篇中文字回傳。
-    成功回傳 "OK"，被攔截回傳 "Duplicate"，完美迎合 cron-job 的胃口！
-    """
     global IS_PROCESSING
-    
-    # 如果已經在處理中，立刻回傳精簡代號，防止 cron-job 爆容量
     if IS_PROCESSING:
         return "Duplicate"
         
@@ -216,14 +208,12 @@ def trigger():
         
         line_res = requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload, timeout=15)
         
-        # 成功只回傳最精簡的 "OK"
         if line_res.status_code == 200:
             return "OK"
         else:
             return f"Error:LINE {line_res.status_code}"
             
     finally:
-        # 事情做完，把防重複鎖解開
         IS_PROCESSING = False
 
 @app.route("/")
