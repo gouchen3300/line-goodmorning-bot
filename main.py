@@ -2,51 +2,22 @@ import os
 import time
 import random
 import requests
-import base64  # 用於將圖片轉為 Base64 格式上傳到 ImgBB
 from flask import Flask, send_file
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 app = Flask(__name__)
 
 LOCAL_IMAGE_PATH = "morning_output.jpg"
-FONT_FILE_NAME = "morning.ttf"  # 沿用您上傳的繁體字型
-IMGBBB_API_KEY = "5526bb902fd10d64e9b8d6edf9c38ae6"  # 已為您填入申請好的 ImgBB 金鑰
+FONT_FILE_NAME = "morning.ttf"  # 沿用您的繁體字型
 
-# 全域狀態鎖：防止 Render 因超時重試導致連續發送重複圖片
+# 建立一個全域「防重複鎖定開關」，防止同一時間被重複戳網址
 IS_PROCESSING = False
 
-# 【重大修正】擴充至 30 句完全不同的俏皮保底文案！就算 Gemini 沒對齊逗號，保底也絕不輕易重複！
+# 俏皮可愛的保底罐頭文案
 BACKUP_QUOTES = [
-    "大家早安，今天又是元氣滿滿的一天，記得戳戳臉頰清醒一下喔",
-    "早安，被窩今天對我實施強力封印，但我還是開外掛爬起來了喔",
-    "大家早安，今天的心情要像冰淇淋，甜甜蜜蜜又冰涼舒爽喔",
-    "早安，鬧鐘響得劈里啪啦，我的睡意還在原地躺平不想努力了",
-    "大夥早安，給今天的自己充滿電力，抱一個準備出發去探險囉",
-    "大家早安，昨晚的夢境續集太精彩，差點讓我賴床到太陽曬屁股",
-    "早安早安，今天叫醒我的不是偉大夢想，是隔壁早餐店的香味喔",
-    "大家早安，星期幾的怨念正在飄散，快點跟我一起吃早餐開外掛",
-    "早安，今天要把快樂開到最大值，生活的小確幸正在向你狂奔",
-    "大家早安，今天的精神就像水豚一樣，慵懶放鬆但也超級無敵可愛",
-    "早安，生活再忙也別忘了微笑，今天也要過得閃閃發亮喔",
-    "大家早安，送你一束晨光的超能力，瞬間把煩惱通通變不見",
-    "早安，今天就當個快樂的開心果，走到哪裡都自帶正能量光環",
-    "大夥早安，咖啡已經充飽電了，接下來就看你大顯身手囉",
-    "早安早安，聽說今天保持微笑的人，出門都會撿到小幸運喔",
-    "大家早安，把昨天的疲憊留在夢裡，今天又是全新且美好的一天",
-    "早安，今天給自己的心情打個滿分，哪怕世界再亂我們也要可愛",
-    "大家早安，早起的人兒有靈感，今天一定要笑到噴飯才過癮",
-    "早安，今天別逼自己太緊，像貓咪一樣伸個懶腰再優雅出發吧",
-    "大家早安，新的一天開張囉，祝你今天的運氣比爆米花還要爆棚",
-    "早安，不管天氣是晴是雨，心裡有太陽就能自帶閃光燈喔",
-    "大夥早安，元氣彈已經幫你搓好了，快點接住這份溫暖的祝福",
-    "早安，起床不是為了打工，是為了看看今天又有什麼好玩的",
-    "大家早安，今天也要保持小兔子的活力，蹦蹦跳跳跨越所有難關",
-    "早安早安，生活雖然有點無厘頭，但我們要過得比誰都更精彩",
-    "大家早安，今天也是個適合幸福的日子，腳步輕快地向前奔跑吧",
-    "早安，泡一杯溫暖的精神糧食，今天也要對自己好一點喔",
-    "大夥早安，不管昨晚有多累，太陽升起時我們又是無敵的英雄",
-    "大家早安，今天的快樂成分已超標，快點跟身邊的人分享吧",
-    "早安，用最可愛的姿勢迎接今天，祝你事事順心笑口常開喔"
+    "大家早安！太陽公公曬屁股囉，今天也要元氣滿滿，記得吃早餐喔！",
+    "早安！新的一天開始啦，祝你心情像爆米花一樣，快樂劈里啪啦！",
+    "大家早安！幸福正在向你狂奔過來，今天也要記得保持微笑喔！"
 ]
 
 # 充滿朝氣的豐富顏色搭配（文字, 內文1, 內文2, 第三行可愛亮色）
@@ -59,7 +30,7 @@ COLOR_PALETTES = [
 ]
 
 def get_gemini_morning_quote():
-    """ 讓 Gemini 生成俏皮早安文案，並在程式端做高容錯切割，防撞詞、防死板判定 """
+    """ 讓 Gemini 生成俏皮、可愛、絕對不無聊的三行早安文案 """
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         return random.choice(BACKUP_QUOTES)
@@ -75,15 +46,12 @@ def get_gemini_morning_quote():
             "parts": [{
                 "text": (
                     f"你是一位說話風格極度『俏皮、可愛、活潑、幽默』的早安圖文學大師。請以『{selected_style}』的語氣，"
-                    "全新創作一句送給好友的早安問候語。為了確保每天內容完全獨特、不重複（目標 60 天不套路），請嚴格遵守以下規則：\n\n"
+                    "全新創作一句送給好友的早安問候語。要求：\n"
                     "1. 必須包含「早安」或「大家早安」開頭。\n"
-                    "2. 總字數嚴格控制在 25 到 32 個字之間，讀起來要讓人會心一笑、覺得新穎不枯燥。\n"
-                    "3. 內容中間必須包含兩個逗號（全形半形皆可），將整句話自然分成『三段』。\n"
-                    "   - 第一段：必須是早安開頭。\n"
-                    "   - 第二段：請隨機從以下主題挑選一個發揮【天氣變化、星期幾的怨念與期待、咖啡與早餐的誘惑、昨晚夢境續集、各種可愛動物（如水豚、貓咪、倉鼠）的慵懶聯想、正能量開外掛、無厘頭生活冷笑話、季節感】。\n"
-                    "   - 第三段：必須是最俏皮、最可愛、帶有強烈互動感或祝願的結尾短句。\n"
-                    "4. 【嚴格禁止】使用以下看膩的罐頭詞彙：『元氣滿滿』、『幸福狂奔』、『快樂劈里啪啦』、『保持微笑』。請多開發全新、有現代感的俏皮詞彙（例如：抱一個、充飽電、戳臉頰、笑到噴飯、開外掛、不想努力了）。\n"
-                    "5. 絕對不要有任何驚嘆號、句號等結尾標點符號，不要 Emoji 貼圖。只要純中文字與分隔逗號。"
+                    "2. 總字數控制在 25 到 32 個字之間，讀起來要讓人會心一笑、覺得不枯燥。\n"
+                    "3. 內容中間必須包含兩個全形逗號『，』，將整句話自然分成『三段』。\n"
+                    "   第一段是早安開頭，第二段是溫馨活力描述，第三段必須是最俏皮、最可愛、帶有互動感的結尾短句。\n"
+                    "4. 絕對不要有任何驚嘆號、句號等標點符號（只要那兩個全形逗號），不要 Emoji 貼圖。只要純中文字。"
                 )
             }]
         }]
@@ -94,15 +62,9 @@ def get_gemini_morning_quote():
         if res.status_code == 200:
             result = res.json()
             quote = result['candidates'][0]['content']['parts'][0]['text'].strip()
-            # 清除不需要的結尾標點，但保留做分割用的逗號
-            for punc in ['。', '！', '、', '？', '；', '：', '.', '!', '?', '"', '「', '」', '*', '\n']:
+            for punc in ['。', '！', '、', '？', '；', '：', '.', '!', '?', '"', '「', '」', '*', '\n', ' ']:
                 quote = quote.replace(punc, '')
-            
-            # 將半形逗號標準化為全形，方便後續切行
-            quote = quote.replace(',', '，')
-            
-            # 【核心寬鬆改進】只要字數夠，且有包含逗號，就允許過關，不刁難必須剛好兩個
-            if quote and len(quote) >= 20:
+            if quote and quote.count("，") == 2:
                 return quote
     except Exception as e:
         print(f"Gemini API 生成出錯: {e}")
@@ -118,19 +80,14 @@ def get_must_font(size):
     return ImageFont.load_default()
 
 def draw_beautiful_text(draw, text, image_width):
-    # 支援更彈性的切行方式
     if "，" in text:
         lines = [line.strip() for line in text.split("，") if line.strip()]
     else:
-        # 如果萬一沒有逗號，則強制平分成三段
         third = len(text) // 3
         lines = [text[:third], text[third:third*2], text[third*2:]]
 
-    # 確保剛好有三行，不夠就補，太多就截斷
     while len(lines) < 3:
         lines.append("今天也要超級快樂喔")
-    if len(lines) > 3:
-        lines = lines[:3]
 
     font_line1 = get_must_font(55)
     font_line2 = get_must_font(38)
@@ -163,7 +120,7 @@ def draw_beautiful_text(draw, text, image_width):
     draw.text((x2, start_y), lines[1], font=font_line2, fill=colors[1])
     start_y += line_heights[1] + 20
 
-    # 第三行
+    # 第三行 (端正防切邊，極限加粗立體字)
     try: w3 = draw.textlength(lines[2], font=font_line3)
     except: w3 = len(lines[2]) * 42
     x3 = (image_width - w3) // 2
@@ -178,23 +135,14 @@ def draw_beautiful_text(draw, text, image_width):
 
 
 def generate_morning_image(text_content):
-    """ 動態圖片生成機制：利用當天日期與時間雜湊組合出上百種不重複的底圖來源 """
+    pic_ids = [10, 28, 48, 54, 116, 192, 230, 235, 327, 404, 343, 364, 411, 444, 486, 522, 532, 593, 619, 650]
+    bg_url = f"https://picsum.photos/id/{random.choice(pic_ids)}/800/600"
+    
     try:
-        # 加上時間戳記亂數，打破單純依賴日期的局限，確保即便是同一天重複測試，底圖也絕對洗牌
-        random.seed(int(time.time() * 1000))
-        day_of_year = time.localtime().tm_yday
-        dynamic_pic_id = (day_of_year * 13 + random.randint(1, 100)) % 850
-        
-        if dynamic_pic_id in [0, 100, 200, 300, 400, 500, 600, 700, 800]:
-            dynamic_pic_id += 23
-            
-        bg_url = f"https://picsum.photos/id/{dynamic_pic_id}/800/600"
-        
         img_res = requests.get(bg_url, timeout=15, stream=True)
         if img_res.status_code != 200:
-            pic_ids = [10, 28, 48, 54, 116, 192, 230, 235, 327, 404, 343, 364, 411, 444, 486, 522, 532, 593, 619, 650]
-            bg_url = f"https://picsum.photos/id/{random.choice(pic_ids)}/800/600"
-            img_res = requests.get(bg_url, timeout=10, stream=True)
+            fallback_url = "https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?q=80&w=800"
+            img_res = requests.get(fallback_url, timeout=10, stream=True)
             
         img = Image.open(img_res.raw).convert("RGB")
         img = img.resize((800, 600))
@@ -203,36 +151,10 @@ def generate_morning_image(text_content):
         draw = ImageDraw.Draw(img)
         draw_beautiful_text(draw, text_content, 800)
         img.save(LOCAL_IMAGE_PATH, "JPEG", quality=95)
-        
         return True
     except Exception as e:
         print(f"圖片生成錯誤: {e}")
         return False
-
-def upload_to_imgbb():
-    """ 讀取本地生成的圖片，穩定上傳到使用者的 ImgBB 空間並取得真正的圖片直連網址 """
-    try:
-        if not os.path.exists(LOCAL_IMAGE_PATH):
-            return None
-            
-        with open(LOCAL_IMAGE_PATH, "rb") as file:
-            base64_image = base64.b64encode(file.read()).decode('utf-8')
-            
-        url = "https://api.imgbb.com/1/upload"
-        payload = {
-            "key": IMGBBB_API_KEY,
-            "image": base64_image
-        }
-        
-        res = requests.post(url, data=payload, timeout=20)
-        if res.status_code == 200:
-            result = res.json()
-            if result.get("success"):
-                return result["data"]["image"]["url"]  
-        print(f"ImgBB 上傳失敗，狀態碼: {res.status_code}, 回傳內容: {res.text}")
-    except Exception as e:
-        print(f"ImgBB 上傳過程出錯: {e}")
-    return None
 
 @app.route("/morning_image.jpg")
 def serve_image():
@@ -246,40 +168,37 @@ def serve_image():
 
 @app.route("/trigger")
 def trigger():
+    """ 
+    【核心優化】徹底移除長篇中文字回傳。
+    成功回傳 "OK"，被攔截回傳 "Duplicate"，完美迎合 cron-job 的胃口！
+    """
     global IS_PROCESSING
     
-    # 防止因超時重試導致的短時間連發
+    # 如果已經在處理中，立刻回傳精簡代號，防止 cron-job 爆容量
     if IS_PROCESSING:
-        return "系統正在處理前一次的發送請求，此重複請求已成功攔截。", 202
-
-    LINE_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
-    LINE_USER_ID = os.environ.get("LINE_USER_ID")
+        return "Duplicate"
+        
+    IS_PROCESSING = True
     
-    if not all([LINE_ACCESS_TOKEN, LINE_USER_ID]):
-        return "環境變數尚未設定完成"
-
     try:
-        # 上鎖
-        IS_PROCESSING = True
+        LINE_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
+        LINE_USER_ID = os.environ.get("LINE_USER_ID")
+        RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
+        
+        if not all([LINE_ACCESS_TOKEN, LINE_USER_ID]):
+            return "Error:Missing Env"
+            
+        if not RENDER_EXTERNAL_URL:
+            RENDER_EXTERNAL_URL = "https://" + requests.headers.get('Host', '')
 
         ai_quote = get_gemini_morning_quote()
 
-        # 1. 產生圖片並存在本地端
         if not generate_morning_image(ai_quote):
-            return "圖片生成失敗"
+            return "Error:Image Failed"
             
-        # 2. 將圖片上傳到 ImgBB
-        final_image_url = upload_to_imgbb()
-        
-        if not final_image_url:
-            print("警告：ImgBB 上傳失敗，啟用 Render 網址保底方案")
-            RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
-            if not RENDER_EXTERNAL_URL:
-                RENDER_EXTERNAL_URL = "https://" + requests.headers.get('Host', '')
-            timestamp = int(time.time() * 1000)
-            final_image_url = f"{RENDER_EXTERNAL_URL.rstrip('/')}/morning_image.jpg?t={timestamp}"
+        timestamp = int(time.time() * 1000)
+        final_image_url = f"{RENDER_EXTERNAL_URL.rstrip('/')}/morning_image.jpg?t={timestamp}"
 
-        # 3. 發送給 LINE 官方帳號
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {LINE_ACCESS_TOKEN}"
@@ -297,18 +216,19 @@ def trigger():
         
         line_res = requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload, timeout=15)
         
+        # 成功只回傳最精簡的 "OK"
         if line_res.status_code == 200:
-            return f"【成功】三行俏皮可愛版早安圖已發送！內容：{ai_quote} | 圖片網址：{final_image_url}"
+            return "OK"
         else:
-            return f"LINE 發送失敗: {line_res.status_code}"
+            return f"Error:LINE {line_res.status_code}"
             
     finally:
-        # 解鎖
+        # 事情做完，把防重複鎖解開
         IS_PROCESSING = False
 
 @app.route("/")
 def home():
-    return "Gemini 3-Line Cute Style Bot with ImgBB is running!"
+    return "OK"
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
