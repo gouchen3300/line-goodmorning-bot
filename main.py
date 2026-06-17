@@ -99,49 +99,59 @@ def get_must_font(size):
             pass
     return ImageFont.load_default()
 
-def draw_single_skew_line(base_img, text, font, color, start_y, image_width, is_title=False):
-    """ 修正版：大幅增加畫布安全緩衝區，確保文字有足夠空間完成歪斜旋轉不卡死 """
-    try: text_w = ImageDraw.Draw(base_img).textlength(text, font=font)
-    except: text_w = len(text) * font.size
-    text_h = int(font.size * 1.4)
+def draw_single_skew_line(base_img, text, font, color, center_y, image_width, is_title=False):
+    """ 全新改版：實現整行字體大角度傾斜，且水平絕對置中、不縮小 """
+    # 1. 精準測量文字尺寸，不給多餘的空隙
+    try:
+        text_w = ImageDraw.Draw(base_img).textlength(text, font=font)
+    except:
+        text_w = len(text) * font.size
+    text_h = int(font.size * 1.2)
 
-    # 【核心改進】將緩衝區拉大到 +250 與 +120，給旋轉留足完美空間
-    pad_w = text_w + 250
-    pad_h = text_h + 120
-    txt_img = Image.new("RGBA", (int(pad_w), int(pad_h)), (0, 0, 0, 0))
+    # 2. 建立緊湊的文字畫布（僅預留少許邊緣防修剪）
+    pad = 40
+    txt_w = int(text_w + pad * 2)
+    txt_h = int(text_h + pad * 2)
+    
+    txt_img = Image.new("RGBA", (txt_w, txt_h), (0, 0, 0, 0))
     txt_draw = ImageDraw.Draw(txt_img)
 
-    # 調整文字在臨時畫布中央的起點
-    tx = 125
-    ty = 60
+    # 文字在畫布內置中繪製
+    tx = pad
+    ty = pad
 
-    shadow_radius = 8 if is_title else 6
+    # 繪製經典立體黑邊外框
+    shadow_radius = 6 if is_title else 5
     for dx in range(-shadow_radius, shadow_radius + 1):
         for dy in range(-shadow_radius, shadow_radius + 1):
             if abs(dx) + abs(dy) <= shadow_radius:
                 txt_draw.text((tx + dx, ty + dy), text, font=font, fill="black")
                 
+    # 內襯白邊
     for dx in range(-1, 2):
         for dy in range(-1, 2):
             txt_draw.text((tx + dx, ty + dy), text, font=font, fill="#FFFFFF")
             
+    # 填入亮麗主色
     txt_draw.text((tx, ty), text, font=font, fill=color)
 
+    # 3. 決定傾斜角度（第一行正，二三行隨機向左或向右大角度傾斜）
     if is_title:
         skew_angle = 0.0
     else:
-        # 【核心改進】調大歪斜抽籤範圍至 -4.5 ~ +4.5 度，手寫動態感更明顯
-        skew_angle = random.uniform(-4.5, 4.5)
+        # 隨機決定往左倒還是往右倒，角度在 5 ~ 12 度之間（非常顯眼！）
+        direction = random.choice([-1, 1])
+        skew_angle = direction * random.uniform(5.0, 12.0)
 
-    # 旋轉時使用 expand=True 讓外框自動變大，絕不切字
+    # 旋轉文字畫布，expand=True 確保旋轉後字不會被切掉
     rotated_txt = txt_img.rotate(skew_angle, resample=Image.BICUBIC, expand=True)
 
-    final_w, final_h = rotated_txt.size
-    paste_x = (image_width - final_w) // 2
-    
-    # 補償中心點計算，防止旋轉後上下大幅位移
-    paste_y = start_y - (final_h - text_h) // 2
+    # 4. 【核心修復】精準計算貼回大圖的位置，確保整行字水平絕對置中，上下精準對齊
+    r_w, r_h = rotated_txt.size
+    paste_x = (image_width - r_w) // 2
+    paste_y = center_y - (r_h // 2)
 
+    # 貼回主圖
     base_img.paste(rotated_txt, (int(paste_x), int(paste_y)), rotated_txt)
 
 def draw_beautiful_text(base_img, text):
@@ -156,27 +166,19 @@ def draw_beautiful_text(base_img, text):
     while len(lines) < 3:
         lines.append("今天也要超級快樂")
 
+    # 大氣字體配比
     font_line1 = get_must_font(55)
-    font_line2 = get_must_font(35)
+    font_line2 = get_must_font(36)
     font_line3 = get_must_font(38)
 
     color1, color2, color3, color_special = random.choice(COLOR_PALETTES)
     colors = [color1, color2, color_special]
 
-    line_heights = [int(55 * 1.4), int(35 * 1.4), int(38 * 1.5)]
-    total_height = sum(line_heights) + 40
-    current_y = 440 - (total_height // 2)
-
-    # 第一行：端正標題
-    draw_single_skew_line(base_img, lines[0], font_line1, colors[0], current_y, image_width, is_title=True)
-    current_y += line_heights[0] + 15
-
-    # 第二行：全新順暢微歪斜
-    draw_single_skew_line(base_img, lines[1], font_line2, colors[1], current_y, image_width, is_title=False)
-    current_y += line_heights[1] + 20
-
-    # 第三行：全新順暢微歪斜
-    draw_single_skew_line(base_img, lines[2], font_line3, colors[2], current_y, image_width, is_title=False)
+    # 【黃金比例排版】將三行字精準排在畫面下半部的黃金視覺區
+    # 第一行中心點在 340，第二行在 430，第三行在 520
+    draw_single_skew_line(base_img, lines[0], font_line1, colors[0], 340, image_width, is_title=True)
+    draw_single_skew_line(base_img, lines[1], font_line2, colors[1], 430, image_width, is_title=False)
+    draw_single_skew_line(base_img, lines[2], font_line3, colors[2], 520, image_width, is_title=False)
 
 
 def generate_morning_image(text_content, selected_theme):
@@ -191,7 +193,7 @@ def generate_morning_image(text_content, selected_theme):
             
         img = Image.open(img_res.raw).convert("RGB")
         img = img.resize((800, 600))
-        img = img.filter(ImageFilter.GaussianBlur(radius=0.6))
+        img = img.filter(ImageFilter.GaussianBlur(radius=0.5))
         
         draw_beautiful_text(img, text_content)
         img.save(LOCAL_IMAGE_PATH, "JPEG", quality=95)
