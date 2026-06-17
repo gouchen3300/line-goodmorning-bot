@@ -10,30 +10,28 @@ app = Flask(__name__)
 LOCAL_IMAGE_PATH = "morning_output.jpg"
 FONT_FILE_NAME = "morning.ttf"
 
-# 防止同時間重複觸發的鎖定開關
 IS_PROCESSING = False
 
-# 【字畫合一主題庫】精選 400 張高清風格圖片，保證 365 天天天不重複！
 THEMES = [
     {
         "style": "充滿元氣的暖心太陽",
         "keywords": "日出、朝霞、陽光、藍天、日落",
-        "pic_ids": list(range(100, 200)) # 100張朝氣陽光風景
+        "pic_ids": list(range(100, 200))
     },
     {
         "style": "熱情洋溢的森林小熊與大自然",
         "keywords": "茂密森林、綠色植物、可愛大樹、山巒",
-        "pic_ids": list(range(200, 300)) # 100張滿滿綠意森林
+        "pic_ids": list(range(200, 300))
     },
     {
         "style": "暖心又悠閒的晨光咖啡",
         "keywords": "熱咖啡、溫暖晨光、文青咖啡廳、精緻早餐",
-        "pic_ids": list(range(300, 400)) # 100張文青溫馨室內與食物
+        "pic_ids": list(range(300, 400))
     },
     {
         "style": "漫步在美麗花園的晨光精靈",
         "keywords": "盛開的花朵、美麗花園、春天景緻",
-        "pic_ids": list(range(400, 500)) # 100張繽紛春天花草
+        "pic_ids": list(range(400, 500))
     }
 ]
 
@@ -52,7 +50,6 @@ COLOR_PALETTES = [
 ]
 
 def get_gemini_morning_quote(selected_theme):
-    """ 強迫 Gemini 根據今日主題寫作，並嚴格限制大標題在 10 字以內，總字數 25~32 字 """
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         return random.choice(BACKUP_QUOTES)
@@ -76,7 +73,7 @@ def get_gemini_morning_quote(selected_theme):
             }]
         }],
         "generationConfig": {
-            "temperature": 1.0  # 開到最大，確保 60 天以上不撞句
+            "temperature": 1.0
         }
     }
     
@@ -103,48 +100,48 @@ def get_must_font(size):
     return ImageFont.load_default()
 
 def draw_single_skew_line(base_img, text, font, color, start_y, image_width, is_title=False):
-    """ 獨立文字圖層繪製與隨機旋轉，做出完美不切字、底圖不留黑邊的手寫感 """
+    """ 修正版：大幅增加畫布安全緩衝區，確保文字有足夠空間完成歪斜旋轉不卡死 """
     try: text_w = ImageDraw.Draw(base_img).textlength(text, font=font)
     except: text_w = len(text) * font.size
     text_h = int(font.size * 1.4)
 
-    # 建立一個大一點的透明文字畫布（留緩衝區防旋轉切字）
-    pad_w = text_w + 120
-    pad_h = text_h + 60
+    # 【核心改進】將緩衝區拉大到 +250 與 +120，給旋轉留足完美空間
+    pad_w = text_w + 250
+    pad_h = text_h + 120
     txt_img = Image.new("RGBA", (int(pad_w), int(pad_h)), (0, 0, 0, 0))
     txt_draw = ImageDraw.Draw(txt_img)
 
-    tx = 60
-    ty = 30
+    # 調整文字在臨時畫布中央的起點
+    tx = 125
+    ty = 60
 
-    # 繪製黑邊立體陰影
     shadow_radius = 8 if is_title else 6
     for dx in range(-shadow_radius, shadow_radius + 1):
         for dy in range(-shadow_radius, shadow_radius + 1):
             if abs(dx) + abs(dy) <= shadow_radius:
                 txt_draw.text((tx + dx, ty + dy), text, font=font, fill="black")
                 
-    # 內襯白邊讓字更清晰
     for dx in range(-1, 2):
         for dy in range(-1, 2):
             txt_draw.text((tx + dx, ty + dy), text, font=font, fill="#FFFFFF")
             
-    # 填入亮麗的主顏色
     txt_draw.text((tx, ty), text, font=font, fill=color)
 
-    # 標題字不歪斜維持端正，內文兩行（第二、三行）啟動隨機手寫微歪斜
     if is_title:
         skew_angle = 0.0
     else:
-        skew_angle = random.uniform(-2.5, 2.5) # 產生隨機手寫歪斜變化
+        # 【核心改進】調大歪斜抽籤範圍至 -4.5 ~ +4.5 度，手寫動態感更明顯
+        skew_angle = random.uniform(-4.5, 4.5)
 
+    # 旋轉時使用 expand=True 讓外框自動變大，絕不切字
     rotated_txt = txt_img.rotate(skew_angle, resample=Image.BICUBIC, expand=True)
 
     final_w, final_h = rotated_txt.size
     paste_x = (image_width - final_w) // 2
+    
+    # 補償中心點計算，防止旋轉後上下大幅位移
     paste_y = start_y - (final_h - text_h) // 2
 
-    # 完美將這行字融入背景圖
     base_img.paste(rotated_txt, (int(paste_x), int(paste_y)), rotated_txt)
 
 def draw_beautiful_text(base_img, text):
@@ -159,7 +156,6 @@ def draw_beautiful_text(base_img, text):
     while len(lines) < 3:
         lines.append("今天也要超級快樂")
 
-    # 配置字體大小：大標題用大氣的 55 號字！
     font_line1 = get_must_font(55)
     font_line2 = get_must_font(35)
     font_line3 = get_must_font(38)
@@ -171,15 +167,15 @@ def draw_beautiful_text(base_img, text):
     total_height = sum(line_heights) + 40
     current_y = 440 - (total_height // 2)
 
-    # 第一行：大氣 55 號大字標題（維持端正）
+    # 第一行：端正標題
     draw_single_skew_line(base_img, lines[0], font_line1, colors[0], current_y, image_width, is_title=True)
     current_y += line_heights[0] + 15
 
-    # 第二行：隨機微歪斜手寫感
+    # 第二行：全新順暢微歪斜
     draw_single_skew_line(base_img, lines[1], font_line2, colors[1], current_y, image_width, is_title=False)
     current_y += line_heights[1] + 20
 
-    # 第三行：隨機微歪斜手寫感
+    # 第三行：全新順暢微歪斜
     draw_single_skew_line(base_img, lines[2], font_line3, colors[2], current_y, image_width, is_title=False)
 
 
@@ -218,7 +214,7 @@ def serve_image():
 def trigger():
     global IS_PROCESSING
     if IS_PROCESSING:
-        return "OK" # 被攔截時同樣給 OK，防止 cron-job 報錯
+        return "OK"
         
     IS_PROCESSING = True
     
@@ -256,7 +252,7 @@ def trigger():
         }
         
         requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload, timeout=15)
-        return "OK" # 吐出極簡英文字，徹底解決 cron-job "output too large" 的問題！
+        return "OK"
         
     except Exception as e:
         print(f"觸發程序發生異常: {e}")
