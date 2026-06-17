@@ -7,13 +7,14 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 app = Flask(__name__)
 
-LOCAL_IMAGE_PATH = "morning_output.jpg"
+# 使用全局變數紀錄當前最新的檔案名稱
+CURRENT_IMAGE_NAME = "morning_base.jpg"
 FONT_FILE_NAME = "morning.ttf"
 
+# 全局鎖，防止重複觸發
 IS_PROCESSING = False
 LAST_COLOR_INDEX = -1
 
-# 【徹底修正】移除會誤導 Gemini 的具體關鍵字，改成百搭風格，怎麼配都順眼！
 THEMES = [
     {"style": "充滿元氣、陽光朝氣"},
     {"style": "溫馨療癒、幸福滿滿"},
@@ -29,20 +30,19 @@ BACKUP_QUOTES = [
     "祝您早安，平安愉快，天天都有好心情喔"
 ]
 
-# 【強烈撞色調色盤】第一行絕對不是死板的純白，行與行之間顏色對比強烈、絕不糊在一起
 COLOR_PALETTES = [
-    ("#FFF700", "#FFFFFF", "#FF69B4", "#00FFFF"), # 1. 亮麗黃 ＋ 純白 ＋ 亮粉紅
-    ("#FFFFFF", "#FF4500", "#FFF700", "#00FF7F"), # 2. 純白 ＋ 活力橘 ＋ 鮮明黃
-    ("#FF69B4", "#FFFFFF", "#FFFDD0", "#FFA500"), # 3. 亮粉紅 ＋ 純白 ＋ 奶油黃
-    ("#FFFDD0", "#00FF7F", "#FFFFFF", "#FF1493"), # 4. 奶油黃 ＋ 草本綠 ＋ 純白
-    ("#00BFFF", "#FFFFFF", "#FFF700", "#FF6347"), # 5. 天空藍 ＋ 純白 ＋ 檸檬黃
-    ("#FFFFFF", "#E1AD01", "#FF69B4", "#00CED1"), # 6. 純白 ＋ 芥末黃 ＋ 優雅粉
-    ("#FF4500", "#FFFFFF", "#00FF7F", "#FFFF33"), # 7. 奔放橘 ＋ 純白 ＋ 清新綠
-    ("#FFFF33", "#FF1493", "#FFFFFF", "#87CEFA"), # 8. 閃亮黃 ＋ 深粉紅 ＋ 純白
-    ("#FFFFFF", "#00CED1", "#FFA500", "#DB7093"), # 9. 純白 ＋ 湖水藍 ＋ 溫暖橘
-    ("#FF6347", "#FFFF00", "#FFFFFF", "#32CD32"), # 10. 番茄紅 ＋ 閃亮黃 ＋ 純白
-    ("#00FF7F", "#FFFFFF", "#FF4500", "#FFC125"), # 11. 草本綠 ＋ 純白 ＋ 活力橘
-    ("#FFFF00", "#FF69B4", "#FFFFFF", "#1E90FF")  # 12. 金黃色 ＋ 少女粉 ＋ 純白
+    ("#FFF700", "#FFFFFF", "#FF69B4"), # 1. 亮麗黃 ＋ 純白 ＋ 亮粉紅
+    ("#FFFFFF", "#FF4500", "#FFF700"), # 2. 純白 ＋ 活力橘 ＋ 鮮明黃
+    ("#FF69B4", "#FFFFFF", "#FFFDD0"), # 3. 亮粉紅 ＋ 純白 ＋ 奶油黃
+    ("#FFFDD0", "#00FF7F", "#FFFFFF"), # 4. 奶油黃 ＋ 草本綠 ＋ 純白
+    ("#00BFFF", "#FFFFFF", "#FFF700"), # 5. 天空藍 ＋ 純白 ＋ 檸檬黃
+    ("#FFFFFF", "#E1AD01", "#FF69B4"), # 6. 純白 ＋ 芥末黃 ＋ 優雅粉
+    ("#FF4500", "#FFFFFF", "#00FF7F"), # 7. 奔放橘 ＋ 純白 ＋ 清新綠
+    ("#FFFF33", "#FF1493", "#FFFFFF"), # 8. 閃亮黃 ＋ 深粉紅 ＋ 純白
+    ("#FFFFFF", "#00CED1", "#FFA500"), # 9. 純白 ＋ 湖水藍 ＋ 溫暖橘
+    ("#FF6347", "#FFFF00", "#FFFFFF"), # 10. 番茄紅 ＋ 閃亮黃 ＋ 純白
+    ("#00FF7F", "#FFFFFF", "#FF4500"), # 11. 草本綠 ＋ 純白 ＋ 活力橘
+    ("#FFFF00", "#FF69B4", "#FFFFFF")  # 12. 金黃色 ＋ 少女粉 ＋ 純白
 ]
 
 def get_gemini_morning_quote(selected_theme):
@@ -112,14 +112,12 @@ def draw_single_skew_line(base_img, text, font, color, center_y, image_width, is
     tx = pad
     ty = pad
 
-    # 經典超厚黑邊（7像素/5像素），確保在任何背景、任何字色下都極度清晰
     shadow_radius = 7 if is_title else 5
     for dx in range(-shadow_radius, shadow_radius + 1):
         for dy in range(-shadow_radius, shadow_radius + 1):
             if abs(dx) + abs(dy) <= shadow_radius:
                 txt_draw.text((tx + dx, ty + dy), text, font=font, fill="black")
                 
-    # 內襯白邊，增強層次感
     for dx in range(-1, 2):
         for dy in range(-1, 2):
             txt_draw.text((tx + dx, ty + dy), text, font=font, fill="#FFFFFF")
@@ -161,16 +159,15 @@ def draw_beautiful_text(base_img, text):
     chosen_index = random.choice(available_indices)
     LAST_COLOR_INDEX = chosen_index
     
-    color1, color2, color3, _ = COLOR_PALETTES[chosen_index]
+    color1, color2, color3 = COLOR_PALETTES[chosen_index]
 
-    # 置中大字排版
     draw_single_skew_line(base_img, lines[0], font_line1, color1, 340, image_width, is_title=True)
     draw_single_skew_line(base_img, lines[1], font_line2, color2, 435, image_width, is_title=False)
     draw_single_skew_line(base_img, lines[2], font_line3, color3, 525, image_width, is_title=False)
 
 
-def generate_morning_image(text_content, selected_theme):
-    # 隨機抽取 100~500 號的高清大自然/靜物背景圖
+def generate_morning_image(text_content):
+    global CURRENT_IMAGE_NAME
     chosen_id = random.randint(100, 500)
     bg_url = f"https://picsum.photos/id/{chosen_id}/800/600"
     
@@ -185,16 +182,28 @@ def generate_morning_image(text_content, selected_theme):
         img = img.filter(ImageFilter.GaussianBlur(radius=0.5))
         
         draw_beautiful_text(img, text_content)
-        img.save(LOCAL_IMAGE_PATH, "JPEG", quality=95)
+        
+        # 清理舊的隨機命名圖片檔案，避免佔用伺服器硬碟空間
+        if CURRENT_IMAGE_NAME and os.path.exists(CURRENT_IMAGE_NAME) and CURRENT_IMAGE_NAME != "morning_base.jpg":
+            try:
+                os.remove(CURRENT_IMAGE_NAME)
+            except:
+                pass
+
+        # 【核心修正】每次儲存都附帶當前秒數，徹底改變實體檔案路徑
+        new_filename = f"morning_output_{int(time.time())}.jpg"
+        img.save(new_filename, "JPEG", quality=95)
+        CURRENT_IMAGE_NAME = new_filename
         return True
     except Exception as e:
         print(f"圖片生成錯誤: {e}")
         return False
 
-@app.route("/morning_image.jpg")
-def serve_image():
-    if os.path.exists(LOCAL_IMAGE_PATH):
-        res = send_file(LOCAL_IMAGE_PATH, mimetype="image/jpeg")
+@app.route("/get_image/<filename>")
+def serve_image(filename):
+    # 透過動態路徑獲取實體圖片
+    if os.path.exists(filename):
+        res = send_file(filename, mimetype="image/jpeg")
         res.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         res.headers["Pragma"] = "no-cache"
         res.headers["Expires"] = "0"
@@ -222,10 +231,13 @@ def trigger():
 
         today_theme = random.choice(THEMES)
         ai_quote = get_gemini_morning_quote(today_theme)
-        generate_morning_image(ai_quote, today_theme)
+        
+        # 生成新圖並更新當前最新的檔名
+        generate_morning_image(ai_quote)
             
-        timestamp = int(time.time() * 1000)
-        final_image_url = f"{RENDER_EXTERNAL_URL.rstrip('/')}/morning_image.jpg?t={timestamp}"
+        # 【核心修正】網址後面加上兩層隨機變數，逼迫 LINE 的伺服器重新抓取全新內容
+        rand_num = random.randint(10000, 99999)
+        final_image_url = f"{RENDER_EXTERNAL_URL.rstrip('/')}/get_image/{CURRENT_IMAGE_NAME}?rand={rand_num}"
 
         headers = {
             "Content-Type": "application/json",
