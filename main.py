@@ -12,6 +12,9 @@ FONT_FILE_NAME = "morning.ttf"
 
 IS_PROCESSING = False
 
+# 全局變數：紀錄上一次使用的調色盤索引，防止連續顏色重複
+LAST_COLOR_INDEX = -1
+
 THEMES = [
     {
         "style": "充滿元氣的暖心太陽",
@@ -36,17 +39,38 @@ THEMES = [
 ]
 
 BACKUP_QUOTES = [
-    "大家早安，元氣滿滿，記得吃早餐喔",
     "早安新一天，快樂劈里啪啦，幸福向你狂奔",
-    "大家早安，保持微笑，今天也要超級快樂"
+    "大家早安，保持微笑，今天也要超級快樂",
+    "清晨好問候，元氣滿滿，記得吃份溫暖早餐",
+    "好朋友早安，把煩惱拋開，迎接幸運的一天",
+    "祝您早安，平安愉快，天天都有好心情喔"
 ]
 
+# 【大升級】精心調配的 12 組多色系調色盤（每組格式：第一行字色, 第二行字色, 第三行字色, 備用特殊色）
 COLOR_PALETTES = [
-    ("#FFFFFF", "#FFD700", "#FFD700", "#FFFF00"),
-    ("#FFFFFF", "#FF69B4", "#FFC0CB", "#FF1493"),
-    ("#FFFFFF", "#FF4500", "#FFA500", "#FFD700"),
-    ("#FFFFFF", "#00FF7F", "#ADFF2F", "#00FFFF"),
-    ("#FFFF00", "#FFFFFF", "#FFFFFF", "#FF69B4")
+    # ─── 黃色系三種層次 ───
+    ("#FFFFFF", "#FFF700", "#FFF700", "#FFFF33"), # 1. 鮮明檸檬黃（朝氣陽光）
+    ("#FFFFFF", "#FFFDD0", "#FFFDD0", "#FDF5E6"), # 2. 溫柔奶油黃（軟萌療癒）
+    ("#FFFFFF", "#E1AD01", "#E1AD01", "#FFC125"), # 3. 質感芥末黃（文青復古）
+    
+    # ─── 粉紅系兩種層次 ───
+    ("#FFFFFF", "#FF69B4", "#FFC0CB", "#FF1493"), # 4. 少女亮粉紅（活潑可愛）
+    ("#FFFFFF", "#C71585", "#DB7093", "#FF69B4"), # 5. 優雅玫瑰粉（成熟高雅）
+    
+    # ─── 橘紅系兩種層次 ───
+    ("#FFFFFF", "#FF4500", "#FFA500", "#FFD700"), # 6. 奔放活力橘（元氣滿滿）
+    ("#FFFFFF", "#FF6347", "#FF7F50", "#FF4500"), # 7. 溫暖番茄紅（亮麗吸睛）
+    
+    # ─── 綠色系兩種層次 ───
+    ("#FFFFFF", "#00FF7F", "#ADFF2F", "#00FFFF"), # 8. 清新草本綠（大自然風）
+    ("#FFFFFF", "#228B22", "#32CD32", "#00FF00"), # 9. 森林翡翠綠（沉穩茂密）
+    
+    # ─── 藍色系兩種層次 ───
+    ("#FFFFFF", "#00BFFF", "#87CEFA", "#1E90FF"), # 10. 湛藍蔚藍天（遼闊晴空）
+    ("#FFFFFF", "#00CED1", "#20B2AA", "#40E0D0"), # 11. 夢幻湖水綠藍/Tiffany藍
+    
+    # ─── 經典高對比撞色 ───
+    ("#FFFF00", "#FFFFFF", "#FFFFFF", "#FF69B4")  # 12. 閃亮黃配純白（長輩最愛亮眼款）
 ]
 
 def get_gemini_morning_quote(selected_theme):
@@ -100,15 +124,12 @@ def get_must_font(size):
     return ImageFont.load_default()
 
 def draw_single_skew_line(base_img, text, font, color, center_y, image_width, is_title=False):
-    """ 全新改版：實現整行字體大角度傾斜，且水平絕對置中、不縮小 """
-    # 1. 精準測量文字尺寸，不給多餘的空隙
     try:
         text_w = ImageDraw.Draw(base_img).textlength(text, font=font)
     except:
         text_w = len(text) * font.size
     text_h = int(font.size * 1.2)
 
-    # 2. 建立緊湊的文字畫布（僅預留少許邊緣防修剪）
     pad = 40
     txt_w = int(text_w + pad * 2)
     txt_h = int(text_h + pad * 2)
@@ -116,45 +137,39 @@ def draw_single_skew_line(base_img, text, font, color, center_y, image_width, is
     txt_img = Image.new("RGBA", (txt_w, txt_h), (0, 0, 0, 0))
     txt_draw = ImageDraw.Draw(txt_img)
 
-    # 文字在畫布內置中繪製
     tx = pad
     ty = pad
 
-    # 繪製經典立體黑邊外框
-    shadow_radius = 6 if is_title else 5
+    # 經典立體厚黑邊外框
+    shadow_radius = 7 if is_title else 5
     for dx in range(-shadow_radius, shadow_radius + 1):
         for dy in range(-shadow_radius, shadow_radius + 1):
             if abs(dx) + abs(dy) <= shadow_radius:
                 txt_draw.text((tx + dx, ty + dy), text, font=font, fill="black")
                 
-    # 內襯白邊
+    # 內襯白邊，讓色彩層次更跳脫
     for dx in range(-1, 2):
         for dy in range(-1, 2):
             txt_draw.text((tx + dx, ty + dy), text, font=font, fill="#FFFFFF")
             
-    # 填入亮麗主色
     txt_draw.text((tx, ty), text, font=font, fill=color)
 
-    # 3. 決定傾斜角度（第一行正，二三行隨機向左或向右大角度傾斜）
     if is_title:
         skew_angle = 0.0
     else:
-        # 隨機決定往左倒還是往右倒，角度在 5 ~ 12 度之間（非常顯眼！）
         direction = random.choice([-1, 1])
-        skew_angle = direction * random.uniform(5.0, 12.0)
+        skew_angle = direction * random.uniform(6.0, 11.0)
 
-    # 旋轉文字畫布，expand=True 確保旋轉後字不會被切掉
     rotated_txt = txt_img.rotate(skew_angle, resample=Image.BICUBIC, expand=True)
 
-    # 4. 【核心修復】精準計算貼回大圖的位置，確保整行字水平絕對置中，上下精準對齊
     r_w, r_h = rotated_txt.size
     paste_x = (image_width - r_w) // 2
     paste_y = center_y - (r_h // 2)
 
-    # 貼回主圖
     base_img.paste(rotated_txt, (int(paste_x), int(paste_y)), rotated_txt)
 
 def draw_beautiful_text(base_img, text):
+    global LAST_COLOR_INDEX
     image_width, image_height = base_img.size
 
     if "，" in text:
@@ -166,19 +181,23 @@ def draw_beautiful_text(base_img, text):
     while len(lines) < 3:
         lines.append("今天也要超級快樂")
 
-    # 大氣字體配比
-    font_line1 = get_must_font(55)
+    # 標題維持霸氣 60 號字
+    font_line1 = get_must_font(60)
     font_line2 = get_must_font(36)
     font_line3 = get_must_font(38)
 
-    color1, color2, color3, color_special = random.choice(COLOR_PALETTES)
+    # 從 12 組色系中抽取，且保證不與昨天重複
+    available_indices = [i for i in range(len(COLOR_PALETTES)) if i != LAST_COLOR_INDEX]
+    chosen_index = random.choice(available_indices)
+    LAST_COLOR_INDEX = chosen_index
+    
+    color1, color2, color3, color_special = COLOR_PALETTES[chosen_index]
     colors = [color1, color2, color_special]
 
-    # 【黃金比例排版】將三行字精準排在畫面下半部的黃金視覺區
-    # 第一行中心點在 340，第二行在 430，第三行在 520
+    # 黃金置中排版
     draw_single_skew_line(base_img, lines[0], font_line1, colors[0], 340, image_width, is_title=True)
-    draw_single_skew_line(base_img, lines[1], font_line2, colors[1], 430, image_width, is_title=False)
-    draw_single_skew_line(base_img, lines[2], font_line3, colors[2], 520, image_width, is_title=False)
+    draw_single_skew_line(base_img, lines[1], font_line2, colors[1], 435, image_width, is_title=False)
+    draw_single_skew_line(base_img, lines[2], font_line3, colors[2], 525, image_width, is_title=False)
 
 
 def generate_morning_image(text_content, selected_theme):
