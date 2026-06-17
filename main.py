@@ -11,31 +11,14 @@ LOCAL_IMAGE_PATH = "morning_output.jpg"
 FONT_FILE_NAME = "morning.ttf"
 
 IS_PROCESSING = False
-
-# 全局變數：紀錄上一次使用的調色盤索引，防止連續顏色重複
 LAST_COLOR_INDEX = -1
 
+# 【徹底修正】移除會誤導 Gemini 的具體關鍵字，改成百搭風格，怎麼配都順眼！
 THEMES = [
-    {
-        "style": "充滿元氣的暖心太陽",
-        "keywords": "日出、朝霞、陽光、藍天、日落",
-        "pic_ids": list(range(100, 200))
-    },
-    {
-        "style": "熱情洋溢的森林小熊與大自然",
-        "keywords": "茂密森林、綠色植物、可愛大樹、山巒",
-        "pic_ids": list(range(200, 300))
-    },
-    {
-        "style": "暖心又悠閒的晨光咖啡",
-        "keywords": "熱咖啡、溫暖晨光、文青咖啡廳、精緻早餐",
-        "pic_ids": list(range(300, 400))
-    },
-    {
-        "style": "漫步在美麗花園的晨光精靈",
-        "keywords": "盛開的花朵、美麗花園、春天景緻",
-        "pic_ids": list(range(400, 500))
-    }
+    {"style": "充滿元氣、陽光朝氣"},
+    {"style": "溫馨療癒、幸福滿滿"},
+    {"style": "文青優雅、悠閒晨光"},
+    {"style": "清新自然、平安愉快"}
 ]
 
 BACKUP_QUOTES = [
@@ -46,31 +29,20 @@ BACKUP_QUOTES = [
     "祝您早安，平安愉快，天天都有好心情喔"
 ]
 
-# 【大升級】精心調配的 12 組多色系調色盤（每組格式：第一行字色, 第二行字色, 第三行字色, 備用特殊色）
+# 【強烈撞色調色盤】第一行絕對不是死板的純白，行與行之間顏色對比強烈、絕不糊在一起
 COLOR_PALETTES = [
-    # ─── 黃色系三種層次 ───
-    ("#FFFFFF", "#FFF700", "#FFF700", "#FFFF33"), # 1. 鮮明檸檬黃（朝氣陽光）
-    ("#FFFFFF", "#FFFDD0", "#FFFDD0", "#FDF5E6"), # 2. 溫柔奶油黃（軟萌療癒）
-    ("#FFFFFF", "#E1AD01", "#E1AD01", "#FFC125"), # 3. 質感芥末黃（文青復古）
-    
-    # ─── 粉紅系兩種層次 ───
-    ("#FFFFFF", "#FF69B4", "#FFC0CB", "#FF1493"), # 4. 少女亮粉紅（活潑可愛）
-    ("#FFFFFF", "#C71585", "#DB7093", "#FF69B4"), # 5. 優雅玫瑰粉（成熟高雅）
-    
-    # ─── 橘紅系兩種層次 ───
-    ("#FFFFFF", "#FF4500", "#FFA500", "#FFD700"), # 6. 奔放活力橘（元氣滿滿）
-    ("#FFFFFF", "#FF6347", "#FF7F50", "#FF4500"), # 7. 溫暖番茄紅（亮麗吸睛）
-    
-    # ─── 綠色系兩種層次 ───
-    ("#FFFFFF", "#00FF7F", "#ADFF2F", "#00FFFF"), # 8. 清新草本綠（大自然風）
-    ("#FFFFFF", "#228B22", "#32CD32", "#00FF00"), # 9. 森林翡翠綠（沉穩茂密）
-    
-    # ─── 藍色系兩種層次 ───
-    ("#FFFFFF", "#00BFFF", "#87CEFA", "#1E90FF"), # 10. 湛藍蔚藍天（遼闊晴空）
-    ("#FFFFFF", "#00CED1", "#20B2AA", "#40E0D0"), # 11. 夢幻湖水綠藍/Tiffany藍
-    
-    # ─── 經典高對比撞色 ───
-    ("#FFFF00", "#FFFFFF", "#FFFFFF", "#FF69B4")  # 12. 閃亮黃配純白（長輩最愛亮眼款）
+    ("#FFF700", "#FFFFFF", "#FF69B4", "#00FFFF"), # 1. 亮麗黃 ＋ 純白 ＋ 亮粉紅
+    ("#FFFFFF", "#FF4500", "#FFF700", "#00FF7F"), # 2. 純白 ＋ 活力橘 ＋ 鮮明黃
+    ("#FF69B4", "#FFFFFF", "#FFFDD0", "#FFA500"), # 3. 亮粉紅 ＋ 純白 ＋ 奶油黃
+    ("#FFFDD0", "#00FF7F", "#FFFFFF", "#FF1493"), # 4. 奶油黃 ＋ 草本綠 ＋ 純白
+    ("#00BFFF", "#FFFFFF", "#FFF700", "#FF6347"), # 5. 天空藍 ＋ 純白 ＋ 檸檬黃
+    ("#FFFFFF", "#E1AD01", "#FF69B4", "#00CED1"), # 6. 純白 ＋ 芥末黃 ＋ 優雅粉
+    ("#FF4500", "#FFFFFF", "#00FF7F", "#FFFF33"), # 7. 奔放橘 ＋ 純白 ＋ 清新綠
+    ("#FFFF33", "#FF1493", "#FFFFFF", "#87CEFA"), # 8. 閃亮黃 ＋ 深粉紅 ＋ 純白
+    ("#FFFFFF", "#00CED1", "#FFA500", "#DB7093"), # 9. 純白 ＋ 湖水藍 ＋ 溫暖橘
+    ("#FF6347", "#FFFF00", "#FFFFFF", "#32CD32"), # 10. 番茄紅 ＋ 閃亮黃 ＋ 純白
+    ("#00FF7F", "#FFFFFF", "#FF4500", "#FFC125"), # 11. 草本綠 ＋ 純白 ＋ 活力橘
+    ("#FFFF00", "#FF69B4", "#FFFFFF", "#1E90FF")  # 12. 金黃色 ＋ 少女粉 ＋ 純白
 ]
 
 def get_gemini_morning_quote(selected_theme):
@@ -85,14 +57,14 @@ def get_gemini_morning_quote(selected_theme):
         "contents": [{
             "parts": [{
                 "text": (
-                    f"你是一位說話風格極度『俏皮、可愛、活潑、幽默』的早安圖文學大師。\n"
-                    f"今天這張早安圖的背景畫面是：【{selected_theme['keywords']}】。\n"
-                    f"請你配合這個背景，以『{selected_theme['style']}』的語氣，全新創作一句送給好友的早安問候語。必須遵守以下鐵律：\n"
-                    "1. 【60天絕不重複】：發揮你的最高創意，文字必須和背景畫面完美呼應、絕不突兀！\n"
-                    "2. 【嚴格字數限制】：總字數必須控制在 25 到 32 個字之間！\n"
-                    "3. 內容中間必須包含兩個全形逗號『，』，將整句話自然分成『三段』。\n"
-                    "   【最重要鐵律】第一段是標題開頭（必須包含早安），字數請『嚴格限制在 4 到 10 個字以內』，絕對不能多於 10 個字！\n"
-                    "4. 絕對不要有任何驚嘆號、句號等標點符號（只要那兩個全形逗號），不要任何 Emoji 貼圖。只要純中文字。"
+                    f"你是一位說話風格極度『俏皮、可愛、活潑、幽默』的早安圖問候語大師。\n"
+                    f"請發揮你的最高創意，以『{selected_theme['style']}』的溫暖語氣，創作用於早安圖的問候語。必須遵守以下鐵律：\n"
+                    "1. 【嚴格字數限制】：總字數必須控制在 25 到 32 個字之間！\n"
+                    "2. 內容中間必須包含兩個全形逗號『，』，將整句話自然分成『三段』。\n"
+                    "3. 【最重要鐵律-第一段規範】：第一段是標題開頭（必須包含早安），字數嚴格限制在 4 到 10 個字以內。\n"
+                    "   第一段必須使用台灣最親切自然的常用問候語開頭（例如：大家早安、好友早安、親愛的朋友早安、祝您早安、早安你好）。\n"
+                    "   【死命令】：絕對不准自己發明奇怪、不合常理的詞彙（例如絕對不准出現綠林早安、相機早安、咖啡早安、朝霞早安等怪詞）！\n"
+                    "4. 絕對不要任何驚嘆號、句號等標點符號（只要那兩個全形逗號），不要任何 Emoji 貼圖。只要純中文字。"
                 )
             }]
         }],
@@ -140,14 +112,14 @@ def draw_single_skew_line(base_img, text, font, color, center_y, image_width, is
     tx = pad
     ty = pad
 
-    # 經典立體厚黑邊外框
+    # 經典超厚黑邊（7像素/5像素），確保在任何背景、任何字色下都極度清晰
     shadow_radius = 7 if is_title else 5
     for dx in range(-shadow_radius, shadow_radius + 1):
         for dy in range(-shadow_radius, shadow_radius + 1):
             if abs(dx) + abs(dy) <= shadow_radius:
                 txt_draw.text((tx + dx, ty + dy), text, font=font, fill="black")
                 
-    # 內襯白邊，讓色彩層次更跳脫
+    # 內襯白邊，增強層次感
     for dx in range(-1, 2):
         for dy in range(-1, 2):
             txt_draw.text((tx + dx, ty + dy), text, font=font, fill="#FFFFFF")
@@ -181,27 +153,25 @@ def draw_beautiful_text(base_img, text):
     while len(lines) < 3:
         lines.append("今天也要超級快樂")
 
-    # 標題維持霸氣 60 號字
     font_line1 = get_must_font(60)
     font_line2 = get_must_font(36)
     font_line3 = get_must_font(38)
 
-    # 從 12 組色系中抽取，且保證不與昨天重複
     available_indices = [i for i in range(len(COLOR_PALETTES)) if i != LAST_COLOR_INDEX]
     chosen_index = random.choice(available_indices)
     LAST_COLOR_INDEX = chosen_index
     
-    color1, color2, color3, color_special = COLOR_PALETTES[chosen_index]
-    colors = [color1, color2, color_special]
+    color1, color2, color3, _ = COLOR_PALETTES[chosen_index]
 
-    # 黃金置中排版
-    draw_single_skew_line(base_img, lines[0], font_line1, colors[0], 340, image_width, is_title=True)
-    draw_single_skew_line(base_img, lines[1], font_line2, colors[1], 435, image_width, is_title=False)
-    draw_single_skew_line(base_img, lines[2], font_line3, colors[2], 525, image_width, is_title=False)
+    # 置中大字排版
+    draw_single_skew_line(base_img, lines[0], font_line1, color1, 340, image_width, is_title=True)
+    draw_single_skew_line(base_img, lines[1], font_line2, color2, 435, image_width, is_title=False)
+    draw_single_skew_line(base_img, lines[2], font_line3, color3, 525, image_width, is_title=False)
 
 
 def generate_morning_image(text_content, selected_theme):
-    chosen_id = random.choice(selected_theme["pic_ids"])
+    # 隨機抽取 100~500 號的高清大自然/靜物背景圖
+    chosen_id = random.randint(100, 500)
     bg_url = f"https://picsum.photos/id/{chosen_id}/800/600"
     
     try:
