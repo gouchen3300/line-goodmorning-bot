@@ -14,7 +14,7 @@ IS_PROCESSING = False
 # 【核心記憶機制】紀錄當前輪到第幾組制式圖（0~9），預設從第 0 組開始
 CURRENT_INDEX = 0
 
-# 【超豪華 10 組制式輪流清單】文字天天錯開、調色盤色彩繽紛，保證連點測試時絕不重複！
+# 【超豪華 10 組純台灣味輪流清單】文字全部校正，調色盤色彩繽紛，保證連點測試時絕不重複！
 STATIC_ROUNDS = [
     {
         "text": "大家早安，保持微笑，今天也要超級快樂",
@@ -25,7 +25,7 @@ STATIC_ROUNDS = [
         "colors": ("#FFFFFF", "#FF4500", "#FFF700")  # 純白 + 橘紅 + 黃
     },
     {
-        "text": "親的朋友早安，把煩惱拋開，迎接幸運的一天",
+        "text": "親愛的朋友早安，把煩惱拋開，迎接幸運的一天",
         "colors": ("#FF69B4", "#FFFFFF", "#FFFDD0")  # 玫瑰粉 + 白 + 奶油黃
     },
     {
@@ -49,7 +49,7 @@ STATIC_ROUNDS = [
         "colors": ("#FFFF33", "#FF1493", "#FFFFFF")  # 閃亮黃 + 驚豔粉 + 白
     },
     {
-        "text": "親的朋友早安，放鬆心情，享受悠閒的晨光序曲",
+        "text": "親愛的朋友早安，放鬆心情，享受悠閒的晨光序曲",
         "colors": ("#FFFFFF", "#00CED1", "#FFA500")  # 純白 + 湖水藍 + 活力橘
     },
     {
@@ -100,12 +100,9 @@ def draw_single_skew_line(base_img, text, font, color, center_y, image_width, is
     base_img.paste(rotated_txt, ((image_width - r_w) // 2, center_y - r_h // 2), rotated_txt)
 
 def generate_static_round_image(round_data):
-    """ 【純在地製圖】完全不需要依賴 Picsum 網路圖片，防卡死速度極快 """
-    # 使用一組精美的內建色彩作為背景漸層（或您可以保留原本的抓圖，這裡用高穩定性的 Unsplash 備用）
-    fallback_url = "https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?q=80&w=800"
-    
+    """ 【穩定製圖】隨機抓背景圖，若網路不穩抓不到就用高質感深色背景防卡死 """
     try:
-        # 為了測試時有豐富背景，我們依然去隨機抓一張背景圖，若抓不到就用純色背景防卡死
+        # 使用時間戳記隨機換圖片 ID，讓測試時每張背景都不同
         chosen_id = int(time.time()) % 400 + 100
         bg_url = f"https://picsum.photos/id/{chosen_id}/800/600"
         img_res = requests.get(bg_url, timeout=5, stream=True)
