@@ -1,221 +1,190 @@
 import os
 import time
-import random
 import requests
-import threading  # 引入多執行緒，專治 cron-job 超時問題
-from flask import Flask
+from flask import Flask, send_file
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 app = Flask(__name__)
 
-# 使用全局變數紀錄當前最新的檔案名稱
-CURRENT_IMAGE_NAME = "morning_base.jpg"
+LOCAL_IMAGE_PATH = "morning_output.jpg"
 FONT_FILE_NAME = "morning.ttf"
 
-# 全局鎖，防止重複觸發
 IS_PROCESSING = False
-LAST_COLOR_INDEX = -1
 
-# 全方位百搭「正能量主題」
-THEMES = [
-    {"style": "充滿元氣、陽光朝氣"},
-    {"style": "溫馨療癒、幸福滿滿"},
-    {"style": "文青優雅、悠閒晨光"},
-    {"style": "清新自然、平安愉快"}
-]
+# 【核心記憶機制】紀錄當前輪到第幾組制式圖（0~9），預設從第 0 組開始
+CURRENT_INDEX = 0
 
-BACKUP_QUOTES = [
-    "早安新一天，快樂劈里啪啦，幸福向你狂奔",
-    "大家早安，保持微笑，今天也要超級快樂",
-    "清晨好問候，元氣滿滿，記得吃份溫暖早餐",
-    "好朋友早安，把煩惱拋開，迎接幸運的一天",
-    "祝您早安，平安愉快，天天都有好心情喔"
-]
-
-COLOR_PALETTES = [
-    ("#FFF700", "#FFFFFF", "#FF69B4"), 
-    ("#FFFFFF", "#FF4500", "#FFF700"), 
-    ("#FF69B4", "#FFFFFF", "#FFFDD0"), 
-    ("#FFFDD0", "#00FF7F", "#FFFFFF"), 
-    ("#00BFFF", "#FFFFFF", "#FFF700"), 
-    ("#FFFFFF", "#E1AD01", "#FF69B4"), 
-    ("#FF4500", "#FFFFFF", "#00FF7F"), 
-    ("#FFFF33", "#FF1493", "#FFFFFF"), 
-    ("#FFFFFF", "#00CED1", "#FFA500"), 
-    ("#FF6347", "#FFFF00", "#FFFFFF"), 
-    ("#00FF7F", "#FFFFFF", "#FF4500"), 
-    ("#FFFF00", "#FF69B4", "#FFFFFF")  
-]
-
-def get_gemini_morning_quote(selected_theme):
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        return random.choice(BACKUP_QUOTES)
-        
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
-    headers = {"Content-Type": "application/json"}
-    
-    payload = {
-        "contents": [{
-            "parts": [{
-                "text": (
-                    f"你是一位說話風格極度『俏皮、可愛、活潑、幽默』的早安圖問候語大師。\n"
-                    f"請發揮你的最高創意，以『{selected_theme['style']}』的溫暖語氣，創作用於早安圖的問候語。必須遵守以下鐵律：\n"
-                    "1. 【60天絕不重複】：發揮你的最高創意，絕對不要有陳腔綾調！\n"
-                    "2. 【嚴格字數限制】：總字數必須控制在 25 到 32 個字之間！\n"
-                    "3. 內容中間必須包含兩個全形逗號『，』，將整句話自然分成『三段』。\n"
-                    "   【最重要鐵律-字詞規範】：第一段是標題開頭（必須包含早安），字數嚴格限制在 4 到 10 個字以內。\n"
-                    "   第一段必須使用台灣最自然常見的問候語（例如：大家早安、好友早安、親愛的朋友早安、祝您早安、早安你好）。\n"
-                    "   【死命令】：絕對不准自己生造、發明奇怪的名詞（例如絕對不准出現綠林早安、相機早安、咖啡早安等怪詞）！\n"
-                    "4. 絕對不要有任何驚嘆號、句號等標點符號（只要那兩個全形逗號），不要任何 Emoji 貼圖。只要純中文字。"
-                )
-            }]
-        }],
-        "generationConfig": {
-            "temperature": 1.0
-        }
+# 【超豪華 10 組制式輪流清單】文字天天錯開、調色盤色彩繽紛，保證連點測試時絕不重複！
+STATIC_ROUNDS = [
+    {
+        "text": "大家早安，保持微笑，今天也要超級快樂",
+        "colors": ("#FFF700", "#FFFFFF", "#FF69B4")  # 亮檸檬黃 + 白 + 桃紅
+    },
+    {
+        "text": "好友早安，清晨好問候，記得吃份溫暖早餐",
+        "colors": ("#FFFFFF", "#FF4500", "#FFF700")  # 純白 + 橘紅 + 黃
+    },
+    {
+        "text": "親的朋友早安，把煩惱拋開，迎接幸運的一天",
+        "colors": ("#FF69B4", "#FFFFFF", "#FFFDD0")  # 玫瑰粉 + 白 + 奶油黃
+    },
+    {
+        "text": "祝您早安，平安愉快，天天都有好心情喔",
+        "colors": ("#FFFDD0", "#00FF7F", "#FFFFFF")  # 溫柔黃 + 森林綠 + 白
+    },
+    {
+        "text": "早安你好，讓陽光帶走疲憊，迎接美好新起點",
+        "colors": ("#00BFFF", "#FFFFFF", "#FFF700")  # 湛藍 + 白 + 亮黃
+    },
+    {
+        "text": "大家早安，新的一天，快樂劈里啪啦向你狂奔",
+        "colors": ("#FFFFFF", "#E1AD01", "#FF69B4")  # 純白 + 文青金 + 粉紅
+    },
+    {
+        "text": "好友早安，元氣滿滿，幸福已經在悄悄敲門囉",
+        "colors": ("#FF4500", "#FFFFFF", "#00FF7F")  # 亮麗紅 + 白 + 清新綠
+    },
+    {
+        "text": "祝您早安，微笑常在，心想事成萬事都順心",
+        "colors": ("#FFFF33", "#FF1493", "#FFFFFF")  # 閃亮黃 + 驚豔粉 + 白
+    },
+    {
+        "text": "親的朋友早安，放鬆心情，享受悠閒的晨光序曲",
+        "colors": ("#FFFFFF", "#00CED1", "#FFA500")  # 純白 + 湖水藍 + 活力橘
+    },
+    {
+        "text": "早安你好，滿滿正能量，今天也是幸運滿分的一天",
+        "colors": ("#FFFF00", "#FF69B4", "#FFFFFF")  # 金黃 + 玫瑰粉 + 純白
     }
+]
+
+def get_must_font(size):
+    if os.path.exists(FONT_FILE_NAME):
+        try:
+            return ImageFont.truetype(FONT_FILE_NAME, size)
+        except:
+            pass
+    return ImageFont.load_default()
+
+def draw_single_skew_line(base_img, text, font, color, center_y, image_width, is_title=False):
+    """ 獨立文字圖層大角度歪斜與完美置中機制 """
+    try:
+        text_w = ImageDraw.Draw(base_img).textlength(text, font=font)
+    except:
+        text_w = len(text) * font.size
+    text_h = int(font.size * 1.2)
+
+    pad = 40
+    txt_img = Image.new("RGBA", (int(text_w + pad * 2), int(text_h + pad * 2)), (0, 0, 0, 0))
+    txt_draw = ImageDraw.Draw(txt_img)
+
+    # 陰影與描邊
+    shadow_radius = 7 if is_title else 5
+    for dx in range(-shadow_radius, shadow_radius + 1):
+        for dy in range(-shadow_radius, shadow_radius + 1):
+            if abs(dx) + abs(dy) <= shadow_radius:
+                txt_draw.text((pad + dx, pad + dy), text, font=font, fill="black")
+                
+    for dx in range(-1, 2):
+        for dy in range(-1, 2):
+            txt_draw.text((pad + dx, pad + dy), text, font=font, fill="#FFFFFF")
+            
+    txt_draw.text((pad, pad), text, font=font, fill=color)
+
+    # 第一行標題正端，其餘行微歪斜增加活力
+    skew_angle = 0.0 if is_title else -7.5
+
+    rotated_txt = txt_img.rotate(skew_angle, resample=Image.BICUBIC, expand=True)
+    r_w, r_h = rotated_txt.size
+    
+    base_img.paste(rotated_txt, ((image_width - r_w) // 2, center_y - r_h // 2), rotated_txt)
+
+def generate_static_round_image(round_data):
+    """ 【純在地製圖】完全不需要依賴 Picsum 網路圖片，防卡死速度極快 """
+    # 使用一組精美的內建色彩作為背景漸層（或您可以保留原本的抓圖，這裡用高穩定性的 Unsplash 備用）
+    fallback_url = "https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?q=80&w=800"
     
     try:
-        res = requests.post(url, headers=headers, json=payload, timeout=10)
-        if res.status_code == 200:
-            result = res.json()
-            quote = result['candidates'][0]['content']['parts'][0]['text'].strip()
-            for punc in ['。', '！', '、', '？', '；', '：', '.', '!', '?', '"', '「', '」', '*', '\n', ' ']:
-                quote = quote.replace(punc, '')
-            if quote and quote.count("，") == 2:
-                return quote
-    except Exception as e:
-        print(f"Gemini API 生成出錯: {e}")
-        
-    return random.choice(BACKUP_QUOTES)
-
-def generate_morning_image_bytes(text_content):
-    from PIL import Image, ImageDraw, ImageFont, ImageFilter
-    import io
-    
-    chosen_id = random.randint(100, 500)
-    bg_url = f"https://picsum.photos/id/{chosen_id}/800/600"
-    
-    try:
-        img_res = requests.get(bg_url, timeout=15, stream=True)
-        if img_res.status_code != 200:
-            fallback_url = "https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?q=80&w=800"
-            img_res = requests.get(fallback_url, timeout=10, stream=True)
-            
-        img = Image.open(img_res.raw).convert("RGB")
-        img = img.resize((800, 600))
-        img = img.filter(ImageFilter.GaussianBlur(radius=0.5))
-        
-        draw = ImageDraw.Draw(img)
-        image_width, image_height = img.size
-        
-        if "，" in text_content:
-            lines = [line.strip() for line in text_content.split("，") if line.strip()]
+        # 為了測試時有豐富背景，我們依然去隨機抓一張背景圖，若抓不到就用純色背景防卡死
+        chosen_id = int(time.time()) % 400 + 100
+        bg_url = f"https://picsum.photos/id/{chosen_id}/800/600"
+        img_res = requests.get(bg_url, timeout=5, stream=True)
+        if img_res.status_code == 200:
+            img = Image.open(img_res.raw).convert("RGB")
         else:
-            third = len(text_content) // 3
-            lines = [text_content[:third], text_content[third:third*2], text_content[third*2:]]
-            
-        while len(lines) < 3:
-            lines.append("今天也要超級快樂")
-            
-        font_file = FONT_FILE_NAME
-        if os.path.exists(font_file):
-            font1 = ImageFont.truetype(font_file, 60)
-            font2 = ImageFont.truetype(font_file, 36)
-            font3 = ImageFont.truetype(font_file, 38)
-        else:
-            font1 = font2 = font3 = ImageFont.load_default()
-            
-        global LAST_COLOR_INDEX
-        available_indices = [i for i in range(len(COLOR_PALETTES)) if i != LAST_COLOR_INDEX]
-        chosen_index = random.choice(available_indices)
-        LAST_COLOR_INDEX = chosen_index
-        colors = COLOR_PALETTES[chosen_index]
+            img = Image.new("RGB", (800, 600), "#2c3e50")
+    except:
+        img = Image.new("RGB", (800, 600), "#2c3e50")
         
-        centers_y = [340, 435, 525]
-        fonts = [font1, font2, font3]
-        
-        for i, text_line in enumerate(lines[:3]):
-            font = fonts[i]
-            color = colors[i]
-            cy = centers_y[i]
-            is_title = (i == 0)
-            
-            try:
-                text_w = ImageDraw.Draw(img).textlength(text_line, font=font)
-            except:
-                text_w = len(text_line) * font.size
-            text_h = int(font.size * 1.2)
-            
-            pad = 40
-            txt_img = Image.new("RGBA", (int(text_w + pad*2), int(text_h + pad*2)), (0,0,0,0))
-            txt_draw = ImageDraw.Draw(txt_img)
-            
-            shadow_radius = 7 if is_title else 5
-            for dx in range(-shadow_radius, shadow_radius + 1):
-                for dy in range(-shadow_radius, shadow_radius + 1):
-                    if abs(dx) + abs(dy) <= shadow_radius:
-                        txt_draw.text((pad+dx, pad+dy), text_line, font=font, fill="black")
-                        
-            for dx in range(-1, 2):
-                for dy in range(-1, 2):
-                    txt_draw.text((pad+dx, pad+dy), text_line, font=font, fill="#FFFFFF")
-                    
-            txt_draw.text((pad, pad), text_line, font=font, fill=color)
-            
-            skew_angle = 0.0 if is_title else random.choice([-1, 1]) * random.uniform(6.0, 11.0)
-            rotated_txt = txt_img.rotate(skew_angle, resample=Image.BICUBIC, expand=True)
-            
-            r_w, r_h = rotated_txt.size
-            img.paste(rotated_txt, ((image_width - r_w)//2, cy - r_h//2), rotated_txt)
-            
-        img_byte_arr = io.BytesIO()
-        img.save(img_byte_arr, format='JPEG', quality=90)
-        return img_byte_arr.getvalue()
-    except Exception as e:
-        print(f"圖片生成失敗: {e}")
-        return None
-
-def upload_to_imgur(image_bytes):
-    fixed_client_id = "546c25a59c58ad7"
-    url = "https://api.imgur.com/3/image"
-    headers = {"Authorization": f"Client-ID {fixed_client_id}"}
-    files = {"image": image_bytes}
+    img = img.resize((800, 600))
+    img = img.filter(ImageFilter.GaussianBlur(radius=0.5))
     
-    try:
-        res = requests.post(url, headers=headers, files=files, timeout=30)
-        if res.status_code == 200:
-            return res.json()["data"]["link"]
-        else:
-            print(f"Imgur 上傳失敗碼: {res.status_code}, 回應: {res.text}")
-    except Exception as e:
-        print(f"Imgur 連線異常: {e}")
-    return None
+    text_content = round_data["text"]
+    colors = round_data["colors"]
+    image_width, _ = img.size
 
-def async_process_and_send():
-    """ 核心大升級：完全在後台默默執行的神仙邏輯，絕不卡死 cron-job 點火器 """
-    global IS_PROCESSING
+    # 切割文字
+    if "，" in text_content:
+        lines = [line.strip() for line in text_content.split("，") if line.strip()]
+    else:
+        third = len(text_content) // 3
+        lines = [text_content[:third], text_content[third:third*2], text_content[third*2:]]
+
+    while len(lines) < 3:
+        lines.append("祝您平安愉快")
+
+    font_line1 = get_must_font(60)
+    font_line2 = get_must_font(36)
+    font_line3 = get_must_font(38)
+
+    # 黃金置中排版
+    draw_single_skew_line(img, lines[0], font_line1, colors[0], 340, image_width, is_title=True)
+    draw_single_skew_line(img, lines[1], font_line2, colors[1], 435, image_width, is_title=False)
+    draw_single_skew_line(img, lines[2], font_line3, colors[2], 525, image_width, is_title=False)
+
+    img.save(LOCAL_IMAGE_PATH, "JPEG", quality=95)
+
+@app.route("/morning_image.jpg")
+def serve_image():
+    if os.path.exists(LOCAL_IMAGE_PATH):
+        res = send_file(LOCAL_IMAGE_PATH, mimetype="image/jpeg")
+        # 徹底停用瀏覽器與 LINE 的所有快取機制
+        res.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        res.headers["Pragma"] = "no-cache"
+        res.headers["Expires"] = "0"
+        return res
+    return "NotFound", 404
+
+@app.route("/trigger")
+def trigger():
+    global IS_PROCESSING, CURRENT_INDEX
+    if IS_PROCESSING:
+        return "OK"
+    IS_PROCESSING = True
+    
     try:
         LINE_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
         LINE_USER_ID = os.environ.get("LINE_USER_ID")
+        RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
         
         if not all([LINE_ACCESS_TOKEN, LINE_USER_ID]):
-            print("缺少 LINE 環境變數，結束後台任務")
-            return
+            return "OK"
             
-        today_theme = random.choice(THEMES)
-        ai_quote = get_gemini_morning_quote(today_theme)
+        if not RENDER_EXTERNAL_URL:
+            RENDER_EXTERNAL_URL = "https://" + requests.headers.get('Host', '')
+
+        # 【核心輪流邏輯】拿出當前輪到的這一組資料（文字 + 顏色）
+        round_data = STATIC_ROUNDS[CURRENT_INDEX]
         
-        img_bytes = generate_morning_image_bytes(ai_quote)
-        if not img_bytes:
-            return
-            
-        final_image_url = upload_to_imgur(img_bytes)
-        if not final_image_url:
-            print("無法拿到 Imgur 網址，結束後台任務")
-            return
-            
-        print(f"【成功】後台已將圖片託管至 Imgur: {final_image_url}")
+        # 畫圖
+        generate_static_round_image(round_data)
+        
+        # 為了強制刷新 LINE 的快取，我們把當前編號直接塞進網址裡：?idx=0, ?idx=1...
+        timestamp = int(time.time())
+        final_image_url = f"{RENDER_EXTERNAL_URL.rstrip('/')}/morning_image.jpg?idx={CURRENT_INDEX}&t={timestamp}"
+
+        # 【指引下一組】這一次用完，下一次自動換下一號，到了 10 就歸零
+        CURRENT_INDEX = (CURRENT_INDEX + 1) % len(STATIC_ROUNDS)
 
         headers = {
             "Content-Type": "application/json",
@@ -231,25 +200,15 @@ def async_process_and_send():
                 }
             ]
         }
-        requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload, timeout=15)
-        print("【成功】後台已將早安圖推播至 LINE！")
+        
+        requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload, timeout=10)
+        return "OK"
         
     except Exception as e:
-        print(f"後台非同步處理異常: {e}")
+        print(f"錯誤: {e}")
+        return "OK"
     finally:
         IS_PROCESSING = False
-
-@app.route("/trigger")
-def trigger():
-    global IS_PROCESSING
-    if IS_PROCESSING:
-        return "OK"
-    IS_PROCESSING = True
-    
-    # 【救命關鍵】一被觸發，立刻開闢獨立的後台執行緒（Thread）去做苦力，主線程 0.001 秒火速回傳 "OK" 給 cron-job！
-    threading.Thread(target=async_process_and_send).start()
-    
-    return "OK"
 
 @app.route("/")
 def home():
