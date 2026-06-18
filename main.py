@@ -2,6 +2,7 @@ import os
 import time
 import random
 import requests
+import threading  # 引入多執行緒，專治 cron-job 超時問題
 from flask import Flask
 
 app = Flask(__name__)
@@ -14,7 +15,7 @@ FONT_FILE_NAME = "morning.ttf"
 IS_PROCESSING = False
 LAST_COLOR_INDEX = -1
 
-# 【修復： Gemini 提示詞大升級】彻底移除所有森林、咖啡、太陽主題，改成全方位百搭「正能量主題」。
+# 全方位百搭「正能量主題」
 THEMES = [
     {"style": "充滿元氣、陽光朝氣"},
     {"style": "溫馨療癒、幸福滿滿"},
@@ -59,7 +60,7 @@ def get_gemini_morning_quote(selected_theme):
                 "text": (
                     f"你是一位說話風格極度『俏皮、可愛、活潑、幽默』的早安圖問候語大師。\n"
                     f"請發揮你的最高創意，以『{selected_theme['style']}』的溫暖語氣，創作用於早安圖的問候語。必須遵守以下鐵律：\n"
-                    "1. 【60天絕不重複】：發揮你的最高創意，絕對不要有陳腔濫調！\n"
+                    "1. 【60天絕不重複】：發揮你的最高創意，絕對不要有陳腔綾調！\n"
                     "2. 【嚴格字數限制】：總字數必須控制在 25 到 32 個字之間！\n"
                     "3. 內容中間必須包含兩個全形逗號『，』，將整句話自然分成『三段』。\n"
                     "   【最重要鐵律-字詞規範】：第一段是標題開頭（必須包含早安），字數嚴格限制在 4 到 10 個字以內。\n"
@@ -89,11 +90,9 @@ def get_gemini_morning_quote(selected_theme):
     return random.choice(BACKUP_QUOTES)
 
 def generate_morning_image_bytes(text_content):
-    """ 在記憶體中直接繪製圖片並回傳 bytes，完全不寫入磁碟，速度極快 """
     from PIL import Image, ImageDraw, ImageFont, ImageFilter
     import io
     
-    # 隨機抓大自然風景圖
     chosen_id = random.randint(100, 500)
     bg_url = f"https://picsum.photos/id/{chosen_id}/800/600"
     
@@ -107,7 +106,6 @@ def generate_morning_image_bytes(text_content):
         img = img.resize((800, 600))
         img = img.filter(ImageFilter.GaussianBlur(radius=0.5))
         
-        # 繪圖與排版
         draw = ImageDraw.Draw(img)
         image_width, image_height = img.size
         
@@ -120,17 +118,14 @@ def generate_morning_image_bytes(text_content):
         while len(lines) < 3:
             lines.append("今天也要超級快樂")
             
-        # 字型加載
         font_file = FONT_FILE_NAME
         if os.path.exists(font_file):
-            # 依指示加大字體：大氣 60 號標題！
             font1 = ImageFont.truetype(font_file, 60)
             font2 = ImageFont.truetype(font_file, 36)
             font3 = ImageFont.truetype(font_file, 38)
         else:
             font1 = font2 = font3 = ImageFont.load_default()
             
-        # 防重複顏色抽籤
         global LAST_COLOR_INDEX
         available_indices = [i for i in range(len(COLOR_PALETTES)) if i != LAST_COLOR_INDEX]
         chosen_index = random.choice(available_indices)
@@ -174,7 +169,6 @@ def generate_morning_image_bytes(text_content):
             r_w, r_h = rotated_txt.size
             img.paste(rotated_txt, ((image_width - r_w)//2, cy - r_h//2), rotated_txt)
             
-        # 將最終生成的圖片存入記憶體
         img_byte_arr = io.BytesIO()
         img.save(img_byte_arr, format='JPEG', quality=90)
         return img_byte_arr.getvalue()
@@ -183,20 +177,14 @@ def generate_morning_image_bytes(text_content):
         return None
 
 def upload_to_imgur(image_bytes):
-    """ 【核心修復】硬寫 Client IDPass！ anonymous 免登入上傳至 Imgur """
-    # 既然登不進 Imgur，直接硬寫通用 Client ID 通行證，徹底繞過環境變數不穩定的問題！
-    # 這組 ID 是 Imgur 官方提供的 Anonymous 公開測試通行證，絕對有效！
     fixed_client_id = "546c25a59c58ad7"
-        
     url = "https://api.imgur.com/3/image"
     headers = {"Authorization": f"Client-ID {fixed_client_id}"}
     files = {"image": image_bytes}
     
     try:
-        # 上傳到 Imgur 的連線往往需要較長時間，加大逾時到 30 秒以防逾時
         res = requests.post(url, headers=headers, files=files, timeout=30)
         if res.status_code == 200:
-            # 拿到 Imgur 的永久隨機網址，這也是為什麼舊圖永遠不會卡 LINE 快取變臉的原因！
             return res.json()["data"]["link"]
         else:
             print(f"Imgur 上傳失敗碼: {res.status_code}, 回應: {res.text}")
@@ -204,39 +192,31 @@ def upload_to_imgur(image_bytes):
         print(f"Imgur 連線異常: {e}")
     return None
 
-@app.route("/trigger")
-def trigger():
+def async_process_and_send():
+    """ 核心大升級：完全在後台默默執行的神仙邏輯，絕不卡死 cron-job 點火器 """
     global IS_PROCESSING
-    if IS_PROCESSING:
-        # 修復：被攔截時同樣回傳 OK，徹底杜絕 cron 的 large 錯誤
-        return "OK"
-    IS_PROCESSING = True
-    
     try:
         LINE_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
         LINE_USER_ID = os.environ.get("LINE_USER_ID")
         
         if not all([LINE_ACCESS_TOKEN, LINE_USER_ID]):
-            return "OK"
+            print("缺少 LINE 環境變數，結束後台任務")
+            return
             
         today_theme = random.choice(THEMES)
         ai_quote = get_gemini_morning_quote(today_theme)
         
-        # 修復的核心邏輯：依序生 bytes 製圖，接著「一定要上傳到 Imgur 拿到網址」！
         img_bytes = generate_morning_image_bytes(ai_quote)
         if not img_bytes:
-            return "OK"
+            return
             
-        # 上傳並拿到 Imgur 的網址（例如 https://i.imgur.com/ABCDE.jpg）
         final_image_url = upload_to_imgur(img_bytes)
-        
         if not final_image_url:
-            print("無法拿到 Imgur 網址，跳過 LINE 發送")
-            return "OK"
+            print("無法拿到 Imgur 網址，結束後台任務")
+            return
             
-        print(f"【成功】已將今日歪斜大標題早安圖托管至 Imgur: {final_image_url}")
+        print(f"【成功】後台已將圖片託管至 Imgur: {final_image_url}")
 
-        # 發送給 LINE（傳送 Imgur 網址，徹底解決歷史圖片變臉集體「校正回歸」的問題）
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {LINE_ACCESS_TOKEN}"
@@ -252,14 +232,24 @@ def trigger():
             ]
         }
         requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload, timeout=15)
-        # 極簡回報 OK，徹底解決 cron 認為 output too large 的問題！
-        return "OK"
+        print("【成功】後台已將早安圖推播至 LINE！")
         
     except Exception as e:
-        print(f"觸發程序異常: {e}")
-        return "OK"
+        print(f"後台非同步處理異常: {e}")
     finally:
         IS_PROCESSING = False
+
+@app.route("/trigger")
+def trigger():
+    global IS_PROCESSING
+    if IS_PROCESSING:
+        return "OK"
+    IS_PROCESSING = True
+    
+    # 【救命關鍵】一被觸發，立刻開闢獨立的後台執行緒（Thread）去做苦力，主線程 0.001 秒火速回傳 "OK" 給 cron-job！
+    threading.Thread(target=async_process_and_send).start()
+    
+    return "OK"
 
 @app.route("/")
 def home():
