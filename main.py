@@ -7,14 +7,15 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 app = Flask(__name__)
 
-# 使用全局變數紀錄當前最新的檔案名稱
-CURRENT_IMAGE_NAME = "morning_base.jpg"
+# 修復：回歸固定檔名，避免檔案因 Render 重置而消失
+LOCAL_IMAGE_PATH = "morning_output.jpg"
 FONT_FILE_NAME = "morning.ttf"
 
-# 全局鎖，防止重複觸發
+# 防止重複觸發的鎖
 IS_PROCESSING = False
 LAST_COLOR_INDEX = -1
 
+# 清除具體關鍵字，採用全方位正能量風格主題
 THEMES = [
     {"style": "充滿元氣、陽光朝氣"},
     {"style": "溫馨療癒、幸福滿滿"},
@@ -30,6 +31,7 @@ BACKUP_QUOTES = [
     "祝您早安，平安愉快，天天都有好心情喔"
 ]
 
+# 精選 12 組強烈撞色對比色調色盤
 COLOR_PALETTES = [
     ("#FFF700", "#FFFFFF", "#FF69B4"), # 1. 亮麗黃 ＋ 純白 ＋ 亮粉紅
     ("#FFFFFF", "#FF4500", "#FFF700"), # 2. 純白 ＋ 活力橘 ＋ 鮮明黃
@@ -59,12 +61,12 @@ def get_gemini_morning_quote(selected_theme):
                 "text": (
                     f"你是一位說話風格極度『俏皮、可愛、活潑、幽默』的早安圖問候語大師。\n"
                     f"請發揮你的最高創意，以『{selected_theme['style']}』的溫暖語氣，創作用於早安圖的問候語。必須遵守以下鐵律：\n"
-                    "1. 【嚴格字數限制】：總字數必須控制在 25 到 32 個字之間！\n"
-                    "2. 內容中間必須包含兩個全形逗號『，』，將整句話自然分成『三段』。\n"
-                    "3. 【最重要鐵律-第一段規範】：第一段是標題開頭（必須包含早安），字數嚴格限制在 4 到 10 個字以內。\n"
-                    "   第一段必須使用台灣最親切自然的常用問候語開頭（例如：大家早安、好友早安、親愛的朋友早安、祝您早安、早安你好）。\n"
-                    "   【死命令】：絕對不准自己發明奇怪、不合常理的詞彙（例如絕對不准出現綠林早安、相機早安、咖啡早安、朝霞早安等怪詞）！\n"
-                    "4. 絕對不要任何驚嘆號、句號等標點符號（只要那兩個全形逗號），不要任何 Emoji 貼圖。只要純中文字。"
+                    "1. 【嚴格字數限制】：總字數控制在 25 到 32 個字之間！\n"
+                    "2. 內容中間由兩個全形逗號『，』自然分成『三段』。\n"
+                    "3. 【最重要鐵律-第一段】：第一段是標題開頭（必須含早安），字數嚴格限制在 4 到 10 字以內。\n"
+                    "   第一段必須使用台灣自然常見的問候語開頭（例如：大家早安、好友早安、親愛的朋友早安、早安你好）。"
+                    "   【死命令】：不准生造怪詞（例如絕對不准出現綠林早安、相機早安、咖啡早安）！\n"
+                    "4. 不要任何驚嘆號、句號等標點符號，不要任何 Emoji 貼圖。只要純中文字。"
                 )
             }]
         }],
@@ -96,6 +98,7 @@ def get_must_font(size):
     return ImageFont.load_default()
 
 def draw_single_skew_line(base_img, text, font, color, center_y, image_width, is_title=False):
+    """ 大角度整行歪斜，置中大字 """
     try:
         text_w = ImageDraw.Draw(base_img).textlength(text, font=font)
     except:
@@ -112,12 +115,14 @@ def draw_single_skew_line(base_img, text, font, color, center_y, image_width, is
     tx = pad
     ty = pad
 
+    # 經典超厚黑邊（7像素/5像素）
     shadow_radius = 7 if is_title else 5
     for dx in range(-shadow_radius, shadow_radius + 1):
         for dy in range(-shadow_radius, shadow_radius + 1):
             if abs(dx) + abs(dy) <= shadow_radius:
                 txt_draw.text((tx + dx, ty + dy), text, font=font, fill="black")
                 
+    # 內襯白邊
     for dx in range(-1, 2):
         for dy in range(-1, 2):
             txt_draw.text((tx + dx, ty + dy), text, font=font, fill="#FFFFFF")
@@ -127,6 +132,7 @@ def draw_single_skew_line(base_img, text, font, color, center_y, image_width, is
     if is_title:
         skew_angle = 0.0
     else:
+        # 大角度歪斜 -11 ~ -6 或 6 ~ 11
         direction = random.choice([-1, 1])
         skew_angle = direction * random.uniform(6.0, 11.0)
 
@@ -155,19 +161,21 @@ def draw_beautiful_text(base_img, text):
     font_line2 = get_must_font(36)
     font_line3 = get_must_font(38)
 
+    # 防重複調色盤機制
     available_indices = [i for i in range(len(COLOR_PALETTES)) if i != LAST_COLOR_INDEX]
     chosen_index = random.choice(available_indices)
     LAST_COLOR_INDEX = chosen_index
     
     color1, color2, color3 = COLOR_PALETTES[chosen_index]
 
+    # 置中排版
     draw_single_skew_line(base_img, lines[0], font_line1, color1, 340, image_width, is_title=True)
     draw_single_skew_line(base_img, lines[1], font_line2, color2, 435, image_width, is_title=False)
     draw_single_skew_line(base_img, lines[2], font_line3, color3, 525, image_width, is_title=False)
 
 
 def generate_morning_image(text_content):
-    global CURRENT_IMAGE_NAME
+    # 隨機抓大自然風景圖
     chosen_id = random.randint(100, 500)
     bg_url = f"https://picsum.photos/id/{chosen_id}/800/600"
     
@@ -182,28 +190,19 @@ def generate_morning_image(text_content):
         img = img.filter(ImageFilter.GaussianBlur(radius=0.5))
         
         draw_beautiful_text(img, text_content)
-        
-        # 清理舊的隨機命名圖片檔案，避免佔用伺服器硬碟空間
-        if CURRENT_IMAGE_NAME and os.path.exists(CURRENT_IMAGE_NAME) and CURRENT_IMAGE_NAME != "morning_base.jpg":
-            try:
-                os.remove(CURRENT_IMAGE_NAME)
-            except:
-                pass
-
-        # 【核心修正】每次儲存都附帶當前秒數，徹底改變實體檔案路徑
-        new_filename = f"morning_output_{int(time.time())}.jpg"
-        img.save(new_filename, "JPEG", quality=95)
-        CURRENT_IMAGE_NAME = new_filename
+        # 修復：儲存至固定檔名，避免重置後檔案消失
+        img.save(LOCAL_IMAGE_PATH, "JPEG", quality=95)
         return True
     except Exception as e:
         print(f"圖片生成錯誤: {e}")
         return False
 
-@app.route("/get_image/<filename>")
-def serve_image(filename):
-    # 透過動態路徑獲取實體圖片
-    if os.path.exists(filename):
-        res = send_file(filename, mimetype="image/jpeg")
+@app.route("/morning_image.jpg")
+def serve_image():
+    # 修復：提供固定檔名的圖片服務
+    if os.path.exists(LOCAL_IMAGE_PATH):
+        res = send_file(LOCAL_IMAGE_PATH, mimetype="image/jpeg")
+        # 核心修復：強制加上 HTTP Header，徹底告訴 LINE：不要暫存我！
         res.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         res.headers["Pragma"] = "no-cache"
         res.headers["Expires"] = "0"
@@ -232,12 +231,12 @@ def trigger():
         today_theme = random.choice(THEMES)
         ai_quote = get_gemini_morning_quote(today_theme)
         
-        # 生成新圖並更新當前最新的檔名
-        generate_morning_image(ai_quote)
+        if not generate_morning_image(ai_quote):
+            return "OK"
             
-        # 【核心修正】網址後面加上兩層隨機變數，逼迫 LINE 的伺服器重新抓取全新內容
-        rand_num = random.randint(10000, 99999)
-        final_image_url = f"{RENDER_EXTERNAL_URL.rstrip('/')}/get_image/{CURRENT_IMAGE_NAME}?rand={rand_num}"
+        # 修復：網址回歸固定路徑，只加微小時間戳記
+        timestamp = int(time.time() * 1000)
+        final_image_url = f"{RENDER_EXTERNAL_URL.rstrip('/')}/morning_image.jpg?t={timestamp}"
 
         headers = {
             "Content-Type": "application/json",
@@ -255,6 +254,7 @@ def trigger():
         }
         
         requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload, timeout=15)
+        # 核心修復：極簡回報，徹底解決 cron 認為 output large 的問題
         return "OK"
         
     except Exception as e:
