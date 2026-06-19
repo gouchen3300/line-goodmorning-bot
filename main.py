@@ -1,6 +1,6 @@
 import os
 import time
-import random  # 導入隨機庫，徹底解決重新開機歸零問題
+import random
 import threading
 import requests
 from flask import Flask, send_file
@@ -13,7 +13,14 @@ FONT_FILE_NAME = "morning.ttf"
 
 IS_PROCESSING = False
 
-# 豪華 10 組純台灣味制式問候，改由隨機機制抽選
+# 【記憶機制】紀錄上一次成功出圖的時間（用來判定是否為同天連續觸發測試）
+LAST_TRIGGER_HOUR = ""
+# 【記憶機制】儲存當天 AI 生出來的字，同天連續觸發時可以比對
+LAST_AI_TEXT = ""
+# 【核心記憶機制】制式輪流計數器
+CURRENT_INDEX = 0
+
+# 【10 組制式保底文案】只有在同天連續點擊測試、或 AI 斷線時才會出來應付
 STATIC_ROUNDS = [
     {"text": "大家早安，保持微笑，今天也要超級快樂", "colors": ("#FFF700", "#FFFFFF", "#FF69B4")},
     {"text": "好友早安，清晨好問候，記得吃份溫暖早餐", "colors": ("#FFFFFF", "#FF4500", "#FFF700")},
@@ -61,12 +68,31 @@ def draw_single_skew_line(base_img, text, font, color, center_y, image_width, is
     skew_angle = 0.0 if is_title else -7.5
     rotated_txt = txt_img.rotate(skew_angle, resample=Image.BICUBIC, expand=True)
     r_w, r_h = rotated_txt.size
-    
     base_img.paste(rotated_txt, ((image_width - r_w) // 2, center_y - r_h // 2), rotated_txt)
 
-def generate_static_round_image(round_data):
+def get_gemini_quote():
+    """ 呼叫 Gemini AI 天天生成全新、不重複的台灣在地早安正能量文案 """
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        return None
+    url = f"https://generatelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={api_key}"
+    prompt = "請寫一句充滿台灣在地人情味的長句早安問候語，字數約20字左右，格式必須包含逗號，例如：『親愛的朋友早安，放鬆心情，享受悠閒的晨光序曲』。不要有任何解釋與標點符號，只要這句溫暖的話。"
+    
     try:
-        # 使用 random 隨機挑選 picsum 的背景圖片 ID，確保每次背景絕不相同
+        payload = {"contents": [{"parts": [{"text": prompt}]}]}
+        res = requests.post(url, json=payload, timeout=8)
+        if res.status_code == 200:
+            text = res.json()['candidates'][0]['content']['parts'][0]['text'].strip()
+            # 過濾掉可能多出來的引號
+            text = text.replace("『", "").replace("』", "").replace('"', '').replace("「", "").replace("」", "")
+            return text
+    except Exception as e:
+        print(f"Gemini 連線失敗: {e}")
+    return None
+
+def generate_morning_image(text_content, colors):
+    try:
+        # 天天換風景：隨機挑選 100~500 號的高清風景圖片
         random_bg_id = random.randint(100, 500)
         bg_url = f"https://picsum.photos/id/{random_bg_id}/800/600"
         img_res = requests.get(bg_url, timeout=5, stream=True)
@@ -80,12 +106,13 @@ def generate_static_round_image(round_data):
     img = img.resize((800, 600))
     img = img.filter(ImageFilter.GaussianBlur(radius=0.5))
     
-    text_content = round_data["text"]
-    colors = round_data["colors"]
     image_width, _ = img.size
 
+    # 自動切成三行排版
     if "，" in text_content:
         lines = [line.strip() for line in text_content.split("，") if line.strip()]
+    elif "," in text_content:
+        lines = [line.strip() for line in text_content.split(",") if line.strip()]
     else:
         third = len(text_content) // 3
         lines = [text_content[:third], text_content[third:third*2], text_content[third*2:]]
@@ -93,7 +120,7 @@ def generate_static_round_image(round_data):
     while len(lines) < 3:
         lines.append("祝您平安愉快")
 
-    font_line1 = get_must_font(60)
+    font_line1 = get_must_font(55)
     font_line2 = get_must_font(36)
     font_line3 = get_must_font(38)
 
@@ -104,8 +131,7 @@ def generate_static_round_image(round_data):
     img.save(LOCAL_IMAGE_PATH, "JPEG", quality=95)
 
 def async_task(render_url):
-    """ 完全獨立於後台運作，絕不連累前台回應時間 """
-    global IS_PROCESSING
+    global IS_PROCESSING, LAST_TRIGGER_HOUR, LAST_AI_TEXT, CURRENT_INDEX
     try:
         LINE_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
         LINE_USER_ID = os.environ.get("LINE_USER_ID")
@@ -113,11 +139,37 @@ def async_task(render_url):
         if not all([LINE_ACCESS_TOKEN, LINE_USER_ID]):
             return
             
-        # 🔥 核心改進：每次觸發，直接從 10 組裡「隨機盲抽」一組，消滅重啟歸零問題！
-        chosen_round = random.choice(STATIC_ROUNDS)
-        generate_static_round_image(chosen_round)
+        current_hour = time.strftime("%Y-%m-%d-%H") # 精準到小時
         
-        # 在網址加入隨機數與時間戳記，強力破除 LINE 伺服器的舊圖快取
+        # 🌟 核心智慧判斷機制
+        if current_hour != LAST_TRIGGER_HOUR:
+            # 【新的一天/新的小時】呼叫 AI 生字，確保 365 天天天不同
+            print("【智慧模式】今日首次觸發，呼叫 Gemini AI...")
+            ai_text = get_gemini_quote()
+            if ai_text:
+                text_content = ai_text
+                LAST_AI_TEXT = ai_text
+                # 隨機一組精美亮眼配色
+                colors = random.choice(STATIC_ROUNDS)["colors"]
+            else:
+                # 萬一 AI 塞車斷線，用制式保底
+                round_data = STATIC_ROUNDS[CURRENT_INDEX]
+                text_content = round_data["text"]
+                colors = round_data["colors"]
+                CURRENT_INDEX = (CURRENT_INDEX + 1) % len(STATIC_ROUNDS)
+            LAST_TRIGGER_HOUR = current_hour
+        else:
+            # 【同天連續觸發測試】直接抓 10 組制式內容依序輪流，滿足密集測試需求
+            print("【測試模式】同小時連續觸發，使用 10 組制式輪流防重複...")
+            round_data = STATIC_ROUNDS[CURRENT_INDEX]
+            text_content = round_data["text"]
+            colors = round_data["colors"]
+            CURRENT_INDEX = (CURRENT_INDEX + 1) % len(STATIC_ROUNDS)
+
+        # 開始畫圖
+        generate_morning_image(text_content, colors)
+        
+        # 強力破除 LINE 快取
         cache_breaker = random.randint(1000, 9999)
         timestamp = int(time.time())
         final_image_url = f"{render_url.rstrip('/')}/morning_image.jpg?rand={cache_breaker}&t={timestamp}"
@@ -128,13 +180,11 @@ def async_task(render_url):
         }
         payload = {
             "to": LINE_USER_ID,
-            "messages": [
-                {
-                    "type": "image",
-                    "originalContentUrl": final_image_url,
-                    "previewImageUrl": final_image_url
-                }
-            ]
+            "messages": [{
+                "type": "image",
+                "originalContentUrl": final_image_url,
+                "previewImageUrl": final_image_url
+            }]
         }
         requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload, timeout=10)
     except Exception as e:
@@ -159,15 +209,12 @@ def trigger():
         return "OK"
     
     IS_PROCESSING = True
-    
     RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
     if not RENDER_EXTERNAL_URL:
         RENDER_EXTERNAL_URL = "https://" + requests.headers.get('Host', '')
 
-    # 🔥 核心修正：利用 Threading 瞬間把繁重工作丟去後台，前台立刻回傳 "OK" 給 cron-job！
     threading.Thread(target=async_task, args=(RENDER_EXTERNAL_URL,)).start()
-    
-    return "OK"  # 1毫秒內秒回！
+    return "OK"
 
 @app.route("/")
 def home():
