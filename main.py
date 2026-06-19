@@ -1,6 +1,7 @@
 import os
 import time
 import requests
+import threading  # 導入多線程，專治 cron-job 超時 Failed 的核心關鍵
 from flask import Flask, send_file
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
@@ -14,7 +15,7 @@ IS_PROCESSING = False
 # 【核心記憶機制】紀錄當前輪到第幾組制式圖（0~9），預設從第 0 組開始
 CURRENT_INDEX = 0
 
-# 【超豪華 10 組純台灣味輪流清單】文字全部校正，調色盤色彩繽紛，保證連點測試時絕不重複！
+# 【10 組純台灣味輪流清單】文字已校正為「親愛的朋友」，絕無生硬翻譯，且圖文色彩繽紛
 STATIC_ROUNDS = [
     {
         "text": "大家早安，保持微笑，今天也要超級快樂",
@@ -91,18 +92,15 @@ def draw_single_skew_line(base_img, text, font, color, center_y, image_width, is
             
     txt_draw.text((pad, pad), text, font=font, fill=color)
 
-    # 第一行標題正端，其餘行微歪斜增加活力
     skew_angle = 0.0 if is_title else -7.5
-
     rotated_txt = txt_img.rotate(skew_angle, resample=Image.BICUBIC, expand=True)
     r_w, r_h = rotated_txt.size
     
     base_img.paste(rotated_txt, ((image_width - r_w) // 2, center_y - r_h // 2), rotated_txt)
 
 def generate_static_round_image(round_data):
-    """ 【穩定製圖】隨機抓背景圖，若網路不穩抓不到就用高質感深色背景防卡死 """
+    """ 【穩定製圖邏輯】隨機變更背景 ID，若網路瞬斷則用備用深色背景防卡死 """
     try:
-        # 使用時間戳記隨機換圖片 ID，讓測試時每張背景都不同
         chosen_id = int(time.time()) % 400 + 100
         bg_url = f"https://picsum.photos/id/{chosen_id}/800/600"
         img_res = requests.get(bg_url, timeout=5, stream=True)
@@ -120,7 +118,6 @@ def generate_static_round_image(round_data):
     colors = round_data["colors"]
     image_width, _ = img.size
 
-    # 切割文字
     if "，" in text_content:
         lines = [line.strip() for line in text_content.split("，") if line.strip()]
     else:
@@ -134,53 +131,29 @@ def generate_static_round_image(round_data):
     font_line2 = get_must_font(36)
     font_line3 = get_must_font(38)
 
-    # 黃金置中排版
     draw_single_skew_line(img, lines[0], font_line1, colors[0], 340, image_width, is_title=True)
     draw_single_skew_line(img, lines[1], font_line2, colors[1], 435, image_width, is_title=False)
     draw_single_skew_line(img, lines[2], font_line3, colors[2], 525, image_width, is_title=False)
 
     img.save(LOCAL_IMAGE_PATH, "JPEG", quality=95)
 
-@app.route("/morning_image.jpg")
-def serve_image():
-    if os.path.exists(LOCAL_IMAGE_PATH):
-        res = send_file(LOCAL_IMAGE_PATH, mimetype="image/jpeg")
-        # 徹底停用瀏覽器與 LINE 的所有快取機制
-        res.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-        res.headers["Pragma"] = "no-cache"
-        res.headers["Expires"] = "0"
-        return res
-    return "NotFound", 404
-
-@app.route("/trigger")
-def trigger():
-    global IS_PROCESSING, CURRENT_INDEX
-    if IS_PROCESSING:
-        return "OK"
-    IS_PROCESSING = True
-    
+def async_task(render_url):
+    """ 在後台默默執行的工作（畫圖、發送 LINE），完全不佔用前台時間 """
+    global CURRENT_INDEX, IS_PROCESSING
     try:
         LINE_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
         LINE_USER_ID = os.environ.get("LINE_USER_ID")
-        RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
         
         if not all([LINE_ACCESS_TOKEN, LINE_USER_ID]):
-            return "OK"
+            return
             
-        if not RENDER_EXTERNAL_URL:
-            RENDER_EXTERNAL_URL = "https://" + requests.headers.get('Host', '')
-
-        # 【核心輪流邏輯】拿出當前輪到的這一組資料（文字 + 顏色）
         round_data = STATIC_ROUNDS[CURRENT_INDEX]
-        
-        # 畫圖
         generate_static_round_image(round_data)
         
-        # 為了強制刷新 LINE 的快取，我們把當前編號直接塞進網址裡：?idx=0, ?idx=1...
         timestamp = int(time.time())
-        final_image_url = f"{RENDER_EXTERNAL_URL.rstrip('/')}/morning_image.jpg?idx={CURRENT_INDEX}&t={timestamp}"
+        final_image_url = f"{render_url.rstrip('/')}/morning_image.jpg?idx={CURRENT_INDEX}&t={timestamp}"
 
-        # 【指引下一組】這一次用完，下一次自動換下一號，到了 10 就歸零
+        # 準備下一組
         CURRENT_INDEX = (CURRENT_INDEX + 1) % len(STATIC_ROUNDS)
 
         headers = {
@@ -197,15 +170,39 @@ def trigger():
                 }
             ]
         }
-        
         requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload, timeout=10)
-        return "OK"
-        
     except Exception as e:
-        print(f"錯誤: {e}")
-        return "OK"
+        print(f"後台錯誤: {e}")
     finally:
         IS_PROCESSING = False
+
+@app.route("/morning_image.jpg")
+def serve_image():
+    if os.path.exists(LOCAL_IMAGE_PATH):
+        res = send_file(LOCAL_IMAGE_PATH, mimetype="image/jpeg")
+        res.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        res.headers["Pragma"] = "no-cache"
+        res.headers["Expires"] = "0"
+        return res
+    return "NotFound", 404
+
+@app.route("/trigger")
+def trigger():
+    global IS_PROCESSING
+    if IS_PROCESSING:
+        return "OK"  # 如果還在處理中，立刻回傳 OK 避免堵塞
+    
+    IS_PROCESSING = True
+    
+    # 取得當前網址
+    RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
+    if not RENDER_EXTERNAL_URL:
+        RENDER_EXTERNAL_URL = "https://" + requests.headers.get('Host', '')
+
+    # 🔥 核心修正：利用 threading 把畫圖和發 LINE 丟到後台，前台「立刻」回傳 OK 給 cron-job！
+    threading.Thread(target=async_task, args=(RENDER_EXTERNAL_URL,)).start()
+    
+    return "OK"  # 0.001秒內回傳，cron-job 再也不會 Failed 了！
 
 @app.route("/")
 def home():
