@@ -1,7 +1,8 @@
 import os
 import time
+import random  # 導入隨機庫，徹底解決重新開機歸零問題
+import threading
 import requests
-import threading  # 導入多線程，專治 cron-job 超時 Failed 的核心關鍵
 from flask import Flask, send_file
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
@@ -12,51 +13,18 @@ FONT_FILE_NAME = "morning.ttf"
 
 IS_PROCESSING = False
 
-# 【核心記憶機制】紀錄當前輪到第幾組制式圖（0~9），預設從第 0 組開始
-CURRENT_INDEX = 0
-
-# 【10 組純台灣味輪流清單】文字已校正為「親愛的朋友」，絕無生硬翻譯，且圖文色彩繽紛
+# 豪華 10 組純台灣味制式問候，改由隨機機制抽選
 STATIC_ROUNDS = [
-    {
-        "text": "大家早安，保持微笑，今天也要超級快樂",
-        "colors": ("#FFF700", "#FFFFFF", "#FF69B4")  # 亮檸檬黃 + 白 + 桃紅
-    },
-    {
-        "text": "好友早安，清晨好問候，記得吃份溫暖早餐",
-        "colors": ("#FFFFFF", "#FF4500", "#FFF700")  # 純白 + 橘紅 + 黃
-    },
-    {
-        "text": "親愛的朋友早安，把煩惱拋開，迎接幸運的一天",
-        "colors": ("#FF69B4", "#FFFFFF", "#FFFDD0")  # 玫瑰粉 + 白 + 奶油黃
-    },
-    {
-        "text": "祝您早安，平安愉快，天天都有好心情喔",
-        "colors": ("#FFFDD0", "#00FF7F", "#FFFFFF")  # 溫柔黃 + 森林綠 + 白
-    },
-    {
-        "text": "早安你好，讓陽光帶走疲憊，迎接美好新起點",
-        "colors": ("#00BFFF", "#FFFFFF", "#FFF700")  # 湛藍 + 白 + 亮黃
-    },
-    {
-        "text": "大家早安，新的一天，快樂劈里啪啦向你狂奔",
-        "colors": ("#FFFFFF", "#E1AD01", "#FF69B4")  # 純白 + 文青金 + 粉紅
-    },
-    {
-        "text": "好友早安，元氣滿滿，幸福已經在悄悄敲門囉",
-        "colors": ("#FF4500", "#FFFFFF", "#00FF7F")  # 亮麗紅 + 白 + 清新綠
-    },
-    {
-        "text": "祝您早安，微笑常在，心想事成萬事都順心",
-        "colors": ("#FFFF33", "#FF1493", "#FFFFFF")  # 閃亮黃 + 驚豔粉 + 白
-    },
-    {
-        "text": "親愛的朋友早安，放鬆心情，享受悠閒的晨光序曲",
-        "colors": ("#FFFFFF", "#00CED1", "#FFA500")  # 純白 + 湖水藍 + 活力橘
-    },
-    {
-        "text": "早安你好，滿滿正能量，今天也是幸運滿分的一天",
-        "colors": ("#FFFF00", "#FF69B4", "#FFFFFF")  # 金黃 + 玫瑰粉 + 純白
-    }
+    {"text": "大家早安，保持微笑，今天也要超級快樂", "colors": ("#FFF700", "#FFFFFF", "#FF69B4")},
+    {"text": "好友早安，清晨好問候，記得吃份溫暖早餐", "colors": ("#FFFFFF", "#FF4500", "#FFF700")},
+    {"text": "親愛的朋友早安，把煩惱拋開，迎接幸運的一天", "colors": ("#FF69B4", "#FFFFFF", "#FFFDD0")},
+    {"text": "祝您早安，平安愉快，天天都有好心情喔", "colors": ("#FFFDD0", "#00FF7F", "#FFFFFF")},
+    {"text": "早安你好，讓陽光帶走疲憊，迎接美好新起點", "colors": ("#00BFFF", "#FFFFFF", "#FFF700")},
+    {"text": "大家早安，新的一天，快樂劈里啪啦向你狂奔", "colors": ("#FFFFFF", "#E1AD01", "#FF69B4")},
+    {"text": "好友早安，元氣滿滿，幸福已經在悄悄敲門囉", "colors": ("#FF4500", "#FFFFFF", "#00FF7F")},
+    {"text": "祝您早安，微笑常在，心想事成萬事都順心", "colors": ("#FFFF33", "#FF1493", "#FFFFFF")},
+    {"text": "親愛的朋友早安，放鬆心情，享受悠閒的晨光序曲", "colors": ("#FFFFFF", "#00CED1", "#FFA500")},
+    {"text": "早安你好，滿滿正能量，今天也是幸運滿分的一天", "colors": ("#FFFF00", "#FF69B4", "#FFFFFF")}
 ]
 
 def get_must_font(size):
@@ -68,7 +36,6 @@ def get_must_font(size):
     return ImageFont.load_default()
 
 def draw_single_skew_line(base_img, text, font, color, center_y, image_width, is_title=False):
-    """ 獨立文字圖層大角度歪斜與完美置中機制 """
     try:
         text_w = ImageDraw.Draw(base_img).textlength(text, font=font)
     except:
@@ -79,7 +46,6 @@ def draw_single_skew_line(base_img, text, font, color, center_y, image_width, is
     txt_img = Image.new("RGBA", (int(text_w + pad * 2), int(text_h + pad * 2)), (0, 0, 0, 0))
     txt_draw = ImageDraw.Draw(txt_img)
 
-    # 陰影與描邊
     shadow_radius = 7 if is_title else 5
     for dx in range(-shadow_radius, shadow_radius + 1):
         for dy in range(-shadow_radius, shadow_radius + 1):
@@ -99,10 +65,10 @@ def draw_single_skew_line(base_img, text, font, color, center_y, image_width, is
     base_img.paste(rotated_txt, ((image_width - r_w) // 2, center_y - r_h // 2), rotated_txt)
 
 def generate_static_round_image(round_data):
-    """ 【穩定製圖邏輯】隨機變更背景 ID，若網路瞬斷則用備用深色背景防卡死 """
     try:
-        chosen_id = int(time.time()) % 400 + 100
-        bg_url = f"https://picsum.photos/id/{chosen_id}/800/600"
+        # 使用 random 隨機挑選 picsum 的背景圖片 ID，確保每次背景絕不相同
+        random_bg_id = random.randint(100, 500)
+        bg_url = f"https://picsum.photos/id/{random_bg_id}/800/600"
         img_res = requests.get(bg_url, timeout=5, stream=True)
         if img_res.status_code == 200:
             img = Image.open(img_res.raw).convert("RGB")
@@ -138,8 +104,8 @@ def generate_static_round_image(round_data):
     img.save(LOCAL_IMAGE_PATH, "JPEG", quality=95)
 
 def async_task(render_url):
-    """ 在後台默默執行的工作（畫圖、發送 LINE），完全不佔用前台時間 """
-    global CURRENT_INDEX, IS_PROCESSING
+    """ 完全獨立於後台運作，絕不連累前台回應時間 """
+    global IS_PROCESSING
     try:
         LINE_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
         LINE_USER_ID = os.environ.get("LINE_USER_ID")
@@ -147,14 +113,14 @@ def async_task(render_url):
         if not all([LINE_ACCESS_TOKEN, LINE_USER_ID]):
             return
             
-        round_data = STATIC_ROUNDS[CURRENT_INDEX]
-        generate_static_round_image(round_data)
+        # 🔥 核心改進：每次觸發，直接從 10 組裡「隨機盲抽」一組，消滅重啟歸零問題！
+        chosen_round = random.choice(STATIC_ROUNDS)
+        generate_static_round_image(chosen_round)
         
+        # 在網址加入隨機數與時間戳記，強力破除 LINE 伺服器的舊圖快取
+        cache_breaker = random.randint(1000, 9999)
         timestamp = int(time.time())
-        final_image_url = f"{render_url.rstrip('/')}/morning_image.jpg?idx={CURRENT_INDEX}&t={timestamp}"
-
-        # 準備下一組
-        CURRENT_INDEX = (CURRENT_INDEX + 1) % len(STATIC_ROUNDS)
+        final_image_url = f"{render_url.rstrip('/')}/morning_image.jpg?rand={cache_breaker}&t={timestamp}"
 
         headers = {
             "Content-Type": "application/json",
@@ -190,19 +156,18 @@ def serve_image():
 def trigger():
     global IS_PROCESSING
     if IS_PROCESSING:
-        return "OK"  # 如果還在處理中，立刻回傳 OK 避免堵塞
+        return "OK"
     
     IS_PROCESSING = True
     
-    # 取得當前網址
     RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
     if not RENDER_EXTERNAL_URL:
         RENDER_EXTERNAL_URL = "https://" + requests.headers.get('Host', '')
 
-    # 🔥 核心修正：利用 threading 把畫圖和發 LINE 丟到後台，前台「立刻」回傳 OK 給 cron-job！
+    # 🔥 核心修正：利用 Threading 瞬間把繁重工作丟去後台，前台立刻回傳 "OK" 給 cron-job！
     threading.Thread(target=async_task, args=(RENDER_EXTERNAL_URL,)).start()
     
-    return "OK"  # 0.001秒內回傳，cron-job 再也不會 Failed 了！
+    return "OK"  # 1毫秒內秒回！
 
 @app.route("/")
 def home():
