@@ -11,7 +11,6 @@ app = Flask(__name__)
 LOCAL_IMAGE_PATH = "morning_output.jpg"
 FONT_FILE_NAME = "morning.ttf"
 
-# 防止重複點火的旗標
 IS_PROCESSING = False
 
 # 核心記憶機制
@@ -19,18 +18,41 @@ LAST_TRIGGER_HOUR = ""
 LAST_AI_TEXT = ""
 CURRENT_INDEX = 0
 
-# 🌟 台灣在地傳統重大節日資料庫 (日期格式: MM-DD)
-# 2026年端午節為 06-19，中秋節為 09-25
+# 🌟 升級版：台灣重大節日應景「多重英文關鍵字」資料庫 (MM-DD)
 FESTIVALS = {
-    "01-01": {"text": "元旦快樂，新的一年，祝您百事可樂，萬事如意", "keyword": "new-year", "colors": ("#FF1493", "#FFFFFF", "#FFFF00")},
-    "05-10": {"text": "母親節快樂，感恩辛苦的媽媽，祝天天開心，平安健康", "keyword": "carnation", "colors": ("#FF69B4", "#FFFFFF", "#FFFDD0")},
-    "06-19": {"text": "端午安康，粽香四溢，祝您與家人佳節愉快，闔家安康", "keyword": "zongzi", "colors": ("#00FF7F", "#FFFFFF", "#FFF700")}, # 2026端午節
-    "08-08": {"text": "父親節快樂，爸爸您辛苦了，祝您身體健康，萬事順心", "keyword": "father", "colors": ("#00BFFF", "#FFFFFF", "#FFF700")},
-    "09-25": {"text": "中秋佳節快樂，月圓人團圓，祝您幸福美滿，事事順心", "keyword": "moon", "colors": ("#FFFF33", "#FFFFFF", "#FFA500")}, # 2026中秋節
-    "12-25": {"text": "聖誕佳節平安，迎接溫馨歲末，祝您喜樂滿滿，幸福相隨", "keyword": "christmas", "colors": ("#FF4500", "#FFFFFF", "#00FF7F")}
+    "01-01": {
+        "text": "元旦快樂，新的一年，祝您百事可樂，萬事如意", 
+        "keywords": ["fireworks", "new-year", "celebration", "sunrise"],
+        "colors": ("#FF1493", "#FFFFFF", "#FFFF00")
+    },
+    "05-10": {
+        "text": "母親節快樂，感恩辛苦的媽媽，祝天天開心，平安健康", 
+        "keywords": ["carnation", "pink-flowers", "mother-love", "warm-home"],
+        "colors": ("#FF69B4", "#FFFFFF", "#FFFDD0")
+    },
+    "06-19": {
+        "text": "端午安康，粽香四溢，祝您與家人佳節愉快，闔家安康", 
+        "keywords": ["dragonboat", "bamboo-leaves", "rowing", "river-boat", "green-nature"], # 端午聯軍關鍵字
+        "colors": ("#00FF7F", "#FFFFFF", "#FFF700")
+    },
+    "08-08": {
+        "text": "父親節快樂，爸爸您辛苦了，祝您身體健康，萬事順心", 
+        "keywords": ["father", "thank-you-dad", "tie", "suit", "warm-light"],
+        "colors": ("#00BFFF", "#FFFFFF", "#FFF700")
+    },
+    "09-25": {
+        "text": "中秋佳節快樂，月圓人團圓，祝您幸福美滿，事事順心", 
+        "keywords": ["full-moon", "moonlight", "reunion", "lantern", "night-sky"],
+        "colors": ("#FFFF33", "#FFFFFF", "#FFA500")
+    },
+    "12-25": {
+        "text": "聖誕佳節平安，迎接溫馨歲末，祝您喜樂滿滿，幸福相隨", 
+        "keywords": ["christmas-tree", "snow-warm", "gift", "candle-light"],
+        "colors": ("#FF4500", "#FFFFFF", "#00FF7F")
+    }
 }
 
-# 10 組平日制式保底文案（同小時內連續觸發測試、或 AI 斷線時專用）
+# 10 組平日制式保底文案
 STATIC_ROUNDS = [
     {"text": "大家早安，保持微笑，今天也要超級快樂", "colors": ("#FFF700", "#FFFFFF", "#FF69B4")},
     {"text": "好友早安，清晨好問候，記得吃份溫暖早餐", "colors": ("#FFFFFF", "#FF4500", "#FFF700")},
@@ -98,29 +120,44 @@ def get_gemini_quote():
         print(f"Gemini 連線失敗: {e}")
     return None
 
-def generate_morning_image(text_content, colors, keyword=None):
-    try:
-        if keyword:
-            # 🌟 節日模式：根據節日關鍵字去 Unsplash 抓取高畫質意境圖
-            bg_url = f"https://source.unsplash.com/featured/800x600/?{keyword}"
-        else:
-            # 平日模式：隨機抓取高品質風景圖
+def generate_morning_image(text_content, colors, keywords_list=None):
+    img_success = False
+    img = None
+    
+    # 🌟 防禦型抓圖邏輯：如果有提供節日關鍵字列表，依序嘗試抓取，直到成功為止！
+    if keywords_list:
+        # 打亂順序，讓每次手動測試抓到的節日背景也都不一樣
+        random.shuffle(keywords_list)
+        for kw in keywords_list:
+            try:
+                bg_url = f"https://source.unsplash.com/featured/800x600/?{kw}"
+                img_res = requests.get(bg_url, timeout=4, stream=True)
+                if img_res.status_code == 200:
+                    img = Image.open(img_res.raw).convert("RGB")
+                    img_success = True
+                    print(f"【成功】成功使用節日關鍵字 [{kw}] 抓取到主題背景圖！")
+                    break
+            except:
+                continue
+
+    # 如果節日字全部失敗，或者今天是平日，就啟動原本百分之百成功的 Picsum 風景照機制
+    if not img_success:
+        try:
             random_bg_id = random.randint(100, 500)
             bg_url = f"https://picsum.photos/id/{random_bg_id}/800/600"
-            
-        img_res = requests.get(bg_url, timeout=6, stream=True)
-        if img_res.status_code == 200:
-            img = Image.open(img_res.raw).convert("RGB")
-        else:
+            img_res = requests.get(bg_url, timeout=4, stream=True)
+            if img_res.status_code == 200:
+                img = Image.open(img_res.raw).convert("RGB")
+            else:
+                img = Image.new("RGB", (800, 600), "#2c3e50")
+        except:
             img = Image.new("RGB", (800, 600), "#2c3e50")
-    except:
-        img = Image.new("RGB", (800, 600), "#2c3e50")
         
     img = img.resize((800, 600))
     img = img.filter(ImageFilter.GaussianBlur(radius=0.5))
     image_width, _ = img.size
 
-    # 自動切成三行排版
+    # 自動切成三行
     if "，" in text_content:
         lines = [line.strip() for line in text_content.split("，") if line.strip()]
     elif "," in text_content:
@@ -151,21 +188,19 @@ def async_task(render_url):
         if not all([LINE_ACCESS_TOKEN, LINE_USER_ID]):
             return
             
-        current_hour = time.strftime("%Y-%m-%d-%H") # 精準到小時
-        current_date = time.strftime("%m-%d")       # 月日格式，如 06-19
+        current_hour = time.strftime("%Y-%m-%d-%H")
+        current_date = time.strftime("%m-%d")
         
-        # 1. 優先檢查今天是不是傳統大節日
+        # 1. 偵測特殊節日（今天是端午節）
         if current_date in FESTIVALS and current_hour != LAST_TRIGGER_HOUR:
-            print(f"【節日模式】偵測到今日為特殊節日 {current_date}！自動生成節日圖文...")
             fest_data = FESTIVALS[current_date]
             text_content = fest_data["text"]
             colors = fest_data["colors"]
-            keyword = fest_data["keyword"]
+            keywords_list = fest_data["keywords"]
             LAST_TRIGGER_HOUR = current_hour
         
-        # 2. 如果是一般日子，且是該小時第一次點火（正常清晨出圖）
+        # 2. 平日第一次觸發（呼叫 AI）
         elif current_hour != LAST_TRIGGER_HOUR:
-            print("【智慧模式】今日首次觸發，呼叫 Gemini AI 生成全新文案...")
             ai_text = get_gemini_quote()
             if ai_text:
                 text_content = ai_text
@@ -176,22 +211,21 @@ def async_task(render_url):
                 text_content = round_data["text"]
                 colors = round_data["colors"]
                 CURRENT_INDEX = (CURRENT_INDEX + 1) % len(STATIC_ROUNDS)
-            keyword = None
+            keywords_list = None
             LAST_TRIGGER_HOUR = current_hour
             
-        # 3. 如果是同一個小時內重複點擊（吳大哥手動測試模式）
+        # 3. 同小時內重複點擊測試模式
         else:
-            print("【測試模式】同小時連續觸發，使用 10 組制式輪流防重複...")
             round_data = STATIC_ROUNDS[CURRENT_INDEX]
             text_content = round_data["text"]
             colors = round_data["colors"]
             CURRENT_INDEX = (CURRENT_INDEX + 1) % len(STATIC_ROUNDS)
-            keyword = None
+            keywords_list = None
 
-        # 開始繪製圖片
-        generate_morning_image(text_content, colors, keyword)
+        # 執行繪圖
+        generate_morning_image(text_content, colors, keywords_list)
         
-        # 破除 LINE 的快取魔咒
+        # 破除快取
         cache_breaker = random.randint(1000, 9999)
         timestamp = int(time.time())
         final_image_url = f"{render_url.rstrip('/')}/morning_image.jpg?rand={cache_breaker}&t={timestamp}"
