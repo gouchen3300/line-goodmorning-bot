@@ -11,12 +11,11 @@ from io import BytesIO
 app = Flask(__name__)
 
 LOCAL_IMAGE_PATH = "morning_output.jpg"
-FONT_FILE_NAME = "morning.ttf"
 
 PROCESS_LOCK = threading.Lock()
 IS_PROCESSING = False
 
-# 20則精心挑選、充滿在地人情味與正能量的台灣平日早安問候語
+# 20則平日早安問候語
 STATIC_ROUNDS = [
     {"text": "大家早安，保持微笑，今天也要超級快樂", "colors": ("#FFF700", "#FFFFFF", "#FF69B4")},
     {"text": "好友早安，清晨好問候，記得吃份溫暖早餐", "colors": ("#FFFFFF", "#FF4500", "#FFF700")},
@@ -40,40 +39,49 @@ STATIC_ROUNDS = [
     {"text": "好友早安，最美的風景在路上，最真的問候在每天清晨", "colors": ("#FFFFFF", "#00BFFF", "#FF8C00")}
 ]
 
-# 🌟 鋼鐵級保證：精選3張絕對高亮度、充滿正能量陽光的精美大自然風景圖庫（直接內建，100%免開網抓取）
 BRIGHT_BGS = [
-    "https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=800&h=600&q=100", # 陽光萬里無雲的金黃綠色田野
-    "https://images.unsplash.com/photo-1472214222541-d510753a49f8?auto=format&fit=crop&w=800&h=600&q=100", # 採光極佳、晴空萬里的翠綠草原
-    "https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?auto=format&fit=crop&w=800&h=600&q=100"  # 陽光灑落、朝氣蓬勃的森林晨光
+    "https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=800&h=600&q=100", 
+    "https://images.unsplash.com/photo-1472214222541-d510753a49f8?auto=format&fit=crop&w=800&h=600&q=100", 
+    "https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?auto=format&fit=crop&w=800&h=600&q=100"  
 ]
 
 def get_must_font(size):
-    if os.path.exists(FONT_FILE_NAME):
-        try: return ImageFont.truetype(FONT_FILE_NAME, size)
-        except: pass
+    # 🌟 固化字體：優先尋找 Linux 系統內建的高清標準字體，徹底防止斷字或變形
+    font_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "morning.ttf"
+    ]
+    for path in font_paths:
+        if os.path.exists(path):
+            try: return ImageFont.truetype(path, size)
+            except: pass
     return ImageFont.load_default()
 
 def draw_single_skew_line(base_img, text, font, color, center_y, image_width, is_title=False):
-    try: text_w = ImageDraw.Draw(base_img).textlength(text, font=font)
-    except: text_w = len(text) * font.size
+    # 🌟 加上空格間距：讓字與字分開，100% 防止第三行的字黏在一起
+    spaced_text = " ".join(list(text)) if not is_title else text
+    
+    try: text_w = ImageDraw.Draw(base_img).textlength(spaced_text, font=font)
+    except: text_w = len(spaced_text) * font.size
     text_h = int(font.size * 1.2)
     pad = 40
     txt_img = Image.new("RGBA", (int(text_w + pad * 2), int(text_h + pad * 2)), (0, 0, 0, 0))
     txt_draw = ImageDraw.Draw(txt_img)
     
-    # 🌟 邊框再加粗：使用 10 像素超巨型立體雙層黑影邊框，保證在明亮陽光背景下大字清晰無比
-    shadow_radius = 10 if is_title else 7
+    # 🌟 最佳化黑邊厚度：主標題用 8，副標題與第三行降低到 4，保證清晰不糊
+    shadow_radius = 8 if is_title else 4
     for dx in range(-shadow_radius, shadow_radius + 1):
         for dy in range(-shadow_radius, shadow_radius + 1):
             if abs(dx) + abs(dy) <= shadow_radius:
-                txt_draw.text((pad + dx, pad + dy), text, font=font, fill="black")
+                txt_draw.text((pad + dx, pad + dy), spaced_text, font=font, fill="black")
                 
-    for dx in range(-2, 3):
-        for dy in range(-2, 3):
-            txt_draw.text((pad + dx, dy + pad), text, font=font, fill="#FFFFFF")
+    for dx in range(-1, 2):
+        for dy in range(-1, 2):
+            txt_draw.text((pad + dx, dy + pad), spaced_text, font=font, fill="#FFFFFF")
             
-    txt_draw.text((pad, pad), text, font=font, fill=color)
-    skew_angle = 0.0 if is_title else -5.5
+    txt_draw.text((pad, pad), spaced_text, font=font, fill=color)
+    skew_angle = 0.0 if is_title else -4.0
     rotated_txt = txt_img.rotate(skew_angle, resample=Image.BICUBIC, expand=True)
     r_w, r_h = rotated_txt.size
     base_img.paste(rotated_txt, ((image_width - r_w) // 2, center_y - r_h // 2), rotated_txt)
@@ -97,7 +105,6 @@ def get_gemini_quote():
 
 def generate_morning_image(text_content, colors):
     img = None
-    # 🌟 雙重防禦機制：先使用最頂級的高清穩定陽光庫存網址
     selected_url = random.choice(BRIGHT_BGS)
     try:
         img_res = requests.get(selected_url, timeout=6)
@@ -106,7 +113,6 @@ def generate_morning_image(text_content, colors):
     except:
         pass
 
-    # 🌟 絕對防垮：萬一 Unsplash 完全與 Render 斷線，直接生成高飽和度的亮麗金黃日出漸層底圖，100%絕不出現純灰暗或純死藍！
     if not img:
         img = Image.new("RGB", (800, 600), "#FFBB00")
         draw = ImageDraw.Draw(img)
@@ -117,11 +123,9 @@ def generate_morning_image(text_content, colors):
             draw.line([(0, y), (800, y)], fill=(max(0, min(255, r)), max(0, min(255, g)), max(0, min(255, b))))
 
     img = img.resize((800, 600))
-    
-    # 🌟 陽光增強大眼睛：強制調高亮度 40%、對比度 30%、色彩鮮豔度 35%，讓畫面亮麗耀眼！
-    img = ImageEnhance.Brightness(img).enhance(1.40)
-    img = ImageEnhance.Contrast(img).enhance(1.30)
-    img = ImageEnhance.Color(img).enhance(1.35)
+    img = ImageEnhance.Brightness(img).enhance(1.35)
+    img = ImageEnhance.Contrast(img).enhance(1.25)
+    img = ImageEnhance.Color(img).enhance(1.30)
     
     image_width, _ = img.size
 
@@ -134,11 +138,11 @@ def generate_morning_image(text_content, colors):
     while len(lines) < 3: 
         lines.append("祝您喜樂安康")
 
-    font_line1, font_line2, font_line3 = get_must_font(58), get_must_font(38), get_must_font(42)
-    # 微調黃金比例排版，放大主標題，字體更立體
-    draw_single_skew_line(img, lines[0], font_line1, colors[0], 230, image_width, is_title=True)
-    draw_single_skew_line(img, lines[1], font_line2, colors[1], 350, image_width, is_title=False)
-    draw_single_skew_line(img, lines[2], font_line3, colors[2], 460, image_width, is_title=False)
+    # 🌟 微調字體大小與行距：主標題拉高到 200，副標題 340，第三行 470，完美錯開不重疊
+    font_line1, font_line2, font_line3 = get_must_font(62), get_must_font(36), get_must_font(38)
+    draw_single_skew_line(img, lines[0], font_line1, colors[0], 200, image_width, is_title=True)
+    draw_single_skew_line(img, lines[1], font_line2, colors[1], 340, image_width, is_title=False)
+    draw_single_skew_line(img, lines[2], font_line3, colors[2], 470, image_width, is_title=False)
     img.save(LOCAL_IMAGE_PATH, "JPEG", quality=98)
 
 def async_task(render_url):
@@ -153,7 +157,6 @@ def async_task(render_url):
             text_content = ai_text
             colors = random.choice(STATIC_ROUNDS)["colors"]
         else:
-            # AI若忙碌，直接隨機抽籤，天天不重複
             backup_round = random.choice(STATIC_ROUNDS)
             text_content = backup_round["text"]
             colors = backup_round["colors"]
@@ -203,7 +206,6 @@ def trigger():
     if not RENDER_EXTERNAL_URL:
         RENDER_EXTERNAL_URL = "https://" + requests.headers.get('Host', '')
 
-    # 🌟 核心秒回機制：0.1秒火速對排程網回傳 OK，徹底杜絕 Failed 報錯
     threading.Thread(target=async_task, args=(RENDER_EXTERNAL_URL,)).start()
     return "OK"
 
