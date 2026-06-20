@@ -11,7 +11,6 @@ app = Flask(__name__)
 
 LOCAL_IMAGE_PATH = "morning_output.jpg"
 FONT_FILE_NAME = "NotoSansTC-Bold.ttf"
-# 使用 Google 官方飽和度、清晰度最高的思源黑體
 FONT_URL = "https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/TraditionalChinese/NotoSansCJKtc-Bold.otf"
 
 PROCESS_LOCK = threading.Lock()
@@ -40,7 +39,6 @@ STATIC_ROUNDS = [
     {"text": "好友早安，最美的風景在路上，最真誠的問候在每天清晨", "colors": ("#FFFFFF", "#00BFFF", "#FF8C00")}
 ]
 
-# 精選高清、明亮、充滿正能量的陽光風景圖庫
 BRIGHT_BGS = [
     "https://images.unsplash.com/photo-1595981267035-7b04ca84a82d?auto=format&fit=crop&w=800&h=600&q=100", 
     "https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=800&h=600&q=100", 
@@ -64,38 +62,34 @@ def get_must_font(size):
     return ImageFont.load_default()
 
 def draw_styled_text(base_img, text, font, main_color, center_y, image_width, is_title=False):
-    """🌟 核心重寫：使用原生平滑描邊，徹底解決中文字糊成一團的問題"""
+    """🔙 完全還原：回到最原始、完全沒問題的黑框位移畫法"""
     try: text_w = ImageDraw.Draw(base_img).textlength(text, font=font)
     except: text_w = len(text) * font.size
     
-    text_h = int(font.size * 1.4)
-    pad = 40
-    # 建立一個透明的文字畫布
+    text_h = int(font.size * 1.3)
+    pad = 50
     txt_img = Image.new("RGBA", (int(text_w + pad * 2), int(text_h + pad * 2)), (0, 0, 0, 0))
     txt_draw = ImageDraw.Draw(txt_img)
     
     x_pos = pad
     y_pos = pad
     
-    # 設定描邊粗細：大標題 4 像素，小標題 3 像素，保證字體中間的孔隙清晰可見
-    stroke_w = 4 if is_title else 3
+    # 最早完美版本的陰影與描邊厚度
+    shadow_offset = 5 if is_title else 3
+    txt_draw.text((x_pos + shadow_offset, y_pos + shadow_offset), text, font=font, fill=(0, 0, 0, 180))
     
-    # 一行程式碼直接搞定：高畫質文字主體 + 平滑白色外框（絕不產生毛邊與融合）
-    txt_draw.text(
-        (x_pos, y_pos), 
-        text, 
-        font=font, 
-        fill=main_color, 
-        stroke_width=stroke_w, 
-        stroke_fill="#FFFFFF"
-    )
+    border_thickness = 5 if is_title else 3
+    for dx in range(-border_thickness, border_thickness + 1):
+        for dy in range(-border_thickness, border_thickness + 1):
+            if dx*dx + dy*dy <= border_thickness*border_thickness:
+                txt_draw.text((x_pos + dx, y_pos + dy), text, font=font, fill="#FFFFFF")
+                
+    txt_draw.text((x_pos, y_pos), text, font=font, fill=main_color)
     
-    # 輕微斜切排版（主標題不動，其餘微斜 -3 度，活潑大氣）
+    # 完全恢復最初的微斜切排版
     skew_angle = 0.0 if is_title else -3.0
     rotated_txt = txt_img.rotate(skew_angle, resample=Image.BICUBIC, expand=True)
     r_w, r_h = rotated_txt.size
-    
-    # 將畫好的精緻文字貼回底圖
     base_img.paste(rotated_txt, ((image_width - r_w) // 2, center_y - r_h // 2), rotated_txt)
 
 def get_gemini_quote():
@@ -127,24 +121,23 @@ def generate_morning_image(text_content, colors):
     except:
         pass
 
-    # 如果網路抓圖失敗，採用優雅的陽光橘黃漸層底圖
     if not img:
         img = Image.new("RGB", (800, 600), "#FFBB00")
-        draw = ImageDraw.Draw(img)
-        for y in range(600):
-            r = int(255 - (y * 0.08))
-            g = int(200 + (y * 0.05))
-            b = int(20 + (y * 0.3))
-            draw.line([(0, y), (800, y)], fill=(max(0, min(255, r)), max(0, min(255, g)), max(0, min(255, b))))
 
     img = img.resize((800, 600))
-    img = ImageEnhance.Brightness(img).enhance(1.20)
-    img = ImageEnhance.Contrast(img).enhance(1.10)
-    img = ImageEnhance.Color(img).enhance(1.25)
+    img = ImageEnhance.Brightness(img).enhance(1.25)
+    img = ImageEnhance.Contrast(img).enhance(1.15)
+    img = ImageEnhance.Color(img).enhance(1.30)
+    
+    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    ov_draw = ImageDraw.Draw(overlay)
+    for y in range(250, 550):
+        alpha = int((y - 250) / 300 * 55)
+        ov_draw.line([(0, y), (800, y)], fill=(0, 0, 0, alpha))
+    img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
     
     image_width, _ = img.size
 
-    # 斷句邏輯
     if "，" in text_content: lines = [line.strip() for line in text_content.split("，") if line.strip()]
     elif "," in text_content: lines = [line.strip() for line in text_content.split(",") if line.strip()]
     else:
@@ -154,15 +147,12 @@ def generate_morning_image(text_content, colors):
     while len(lines) < 3: 
         lines.append("祝您喜樂安康")
 
-    # 字體大小設定（大標題 62，內文 36/34，大小適中絕不擁擠）
-    font_line1 = get_must_font(62)
-    font_line2 = get_must_font(36)
-    font_line3 = get_must_font(34)
+    # 🔙 恢復最初完美的黃金行距高度
+    font_line1, font_line2, font_line3 = get_must_font(65), get_must_font(36), get_must_font(34)
     
-    # 畫上精緻無毛邊文字（行高高度重新配比，視覺比例極佳）
-    draw_styled_text(img, lines[0], font_line1, colors[0], 170, image_width, is_title=True)
-    draw_styled_text(img, lines[1], font_line2, colors[1], 340, image_width, is_title=False)
-    draw_styled_text(img, lines[2], font_line3, colors[2], 465, image_width, is_title=False)
+    draw_styled_text(img, lines[0], font_line1, colors[0], 180, image_width, is_title=True)
+    draw_styled_text(img, lines[1], font_line2, colors[1], 350, image_width, is_title=False)
+    draw_styled_text(img, lines[2], font_line3, colors[2], 475, image_width, is_title=False)
     
     img.save(LOCAL_IMAGE_PATH, "JPEG", quality=98)
 
@@ -202,7 +192,7 @@ def async_task(render_url):
         }
         requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload, timeout=15)
     except Exception as e: 
-        print(f"背景非同步合成異常: {e}")
+        print(f"背景異常: {e}")
     finally:
         with PROCESS_LOCK:
             IS_PROCESSING = False
@@ -217,6 +207,7 @@ def serve_image():
 
 @app.route("/trigger")
 def trigger():
+    """🎯 唯一修正點：只回傳純文字的 OK，徹底修復 cron-job 錯誤"""
     global IS_PROCESSING
     with PROCESS_LOCK:
         if IS_PROCESSING:
