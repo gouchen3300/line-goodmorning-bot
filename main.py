@@ -32,7 +32,7 @@ STATIC_ROUNDS = [
     {"text": "大家清晨好，送上一聲真摯問候，願您一整天神采飛揚", "colors": ("#FFFFE0", "#00BFFF", "#FFFFFF")},
     {"text": "溫馨早安，把生活調成喜歡的頻道，今天也要幸福滿滿", "colors": ("#FFFFFF", "#FF1493", "#FFFF00")},
     {"text": "好友早安，生活因知足而美麗，願您的微笑像陽光燦爛", "colors": ("#FFFF00", "#FFFFFF", "#00CED1")},
-    {"text": "早安你好，開啟元氣滿滿的一天，好運與您不期而遇", "colors": ("#00FF7F", "#FFFFFF", "#FF4500")},
+    {"text": "早安你好，開啟元氣滿滿的一天，好運與您不期而遇", "colors": ("00FF7F", "#FFFFFF", "#FF4500")},
     {"text": "祝您早安，健康的身體是最大的財富，佳節與平日皆安康", "colors": ("#FFFFFF", "#FFD700", "#FFFFE0")},
     {"text": "清晨早安，生活雖然平凡，但每一天都值得我們熱烈期待", "colors": ("#FF4500", "#FFFFFF", "#FFFF00")},
     {"text": "各位早安，善待自己的心情，讓幸福的感覺裝滿今天", "colors": ("#FFFF00", "#FF69B4", "#FFFFFF")},
@@ -62,21 +62,21 @@ def get_must_font(size):
     return ImageFont.load_default()
 
 def draw_styled_text(base_img, text, font, main_color, center_y, image_width, is_title=False):
-    """🔙 完全還原：回到最初、完全沒有任何問題的黑框粗描邊畫法"""
+    """🔙 完全還原圖一：位置下移、外框加粗、並且恢復大角度斜切！"""
     try: text_w = ImageDraw.Draw(base_img).textlength(text, font=font)
     except: text_w = len(text) * font.size
     
     text_h = int(font.size * 1.3)
-    pad = 50
+    pad = 60
     txt_img = Image.new("RGBA", (int(text_w + pad * 2), int(text_h + pad * 2)), (0, 0, 0, 0))
     txt_draw = ImageDraw.Draw(txt_img)
     
     x_pos = pad
     y_pos = pad
     
-    # 完美還原最初厚實的黑框描邊與陰影，保證文字在任何背景都絕對清晰
+    # 清晰飽滿的黑粗描邊與陰影
     shadow_offset = 5 if is_title else 3
-    txt_draw.text((x_pos + shadow_offset, y_pos + shadow_offset), text, font=font, fill=(0, 0, 0, 200))
+    txt_draw.text((x_pos + shadow_offset, y_pos + shadow_offset), text, font=font, fill=(0, 0, 0, 220))
     
     border_thickness = 5 if is_title else 3
     for dx in range(-border_thickness, border_thickness + 1):
@@ -84,13 +84,13 @@ def draw_styled_text(base_img, text, font, main_color, center_y, image_width, is
             if dx*dx + dy*dy <= border_thickness*border_thickness:
                 txt_draw.text((x_pos + dx, y_pos + dy), text, font=font, fill="#000000")
                 
-    # 填入最核心的主色字體（黃/白/粉等）
     txt_draw.text((x_pos, y_pos), text, font=font, fill=main_color)
     
-    # 完全恢復原本舒適的微斜切排版 (-3度)
-    skew_angle = 0.0 if is_title else -3.0
+    # 🔙 完全還原歪斜度：第一行正的，第二行與第三行恢復圖一原本漂亮的大歪斜 (-10度)
+    skew_angle = 0.0 if is_title else -10.0
     rotated_txt = txt_img.rotate(skew_angle, resample=Image.BICUBIC, expand=True)
     r_w, r_h = rotated_txt.size
+    
     base_img.paste(rotated_txt, ((image_width - r_w) // 2, center_y - r_h // 2), rotated_txt)
 
 def get_gemini_quote():
@@ -148,13 +148,13 @@ def generate_morning_image(text_content, colors):
     while len(lines) < 3: 
         lines.append("祝您喜樂安康")
 
-    # 🔙 完全還原：回到最初最舒適、絕不重疊、大小適中的字體大小
+    # 🔙 完全還原圖一黃金比例字體大小
     font_line1, font_line2, font_line3 = get_must_font(65), get_must_font(36), get_must_font(34)
     
-    # 🔙 完全還原：第一、二、三行精確回到最初完全沒問題的 Y 軸高度（黃金行距）
-    draw_styled_text(img, lines[0], font_line1, colors[0], 180, image_width, is_title=True)
-    draw_styled_text(img, lines[1], font_line2, colors[1], 350, image_width, is_title=False)
-    draw_styled_text(img, lines[2], font_line3, colors[2], 475, image_width, is_title=False)
+    # 🔙 完全還原圖一的位置高度（整體往下移，字體各自獨立分開、絕不重疊）
+    draw_styled_text(img, lines[0], font_line1, colors[0], 330, image_width, is_title=True)
+    draw_styled_text(img, lines[1], font_line2, colors[1], 440, image_width, is_title=False)
+    draw_styled_text(img, lines[2], font_line3, colors[2], 530, image_width, is_title=False)
     
     img.save(LOCAL_IMAGE_PATH, "JPEG", quality=98)
 
