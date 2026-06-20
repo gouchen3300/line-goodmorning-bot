@@ -4,7 +4,6 @@ import random
 import threading
 import requests
 from flask import Flask, send_file
-# 導入 ImageEnhance 用來強制把照片變得明亮、鮮豔
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance
 
 app = Flask(__name__)
@@ -72,16 +71,15 @@ def draw_single_skew_line(base_img, text, font, color, center_y, image_width, is
 def get_gemini_quote():
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key: return None
-    # 🌟 修正點一：重構並校對最穩定的 Gemini 1.5 Flash API 終端節點與格式
+    # 🌟 語法修正核心：移除了重複的 json 參數
     url = f"https://generatelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
     prompt = "請寫一句適合長輩群組、充滿溫馨與正能量的台灣在地早安問候語。字數控制在15到23字之間，中間必須包含一個逗號（，）。嚴禁任何引號、備註、標點符號或解釋，只要這句話本身。"
     try:
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
-        res = requests.post(url, json=payload, json=payload, timeout=8)
+        res = requests.post(url, json=payload, timeout=8)
         if res.status_code == 200:
             text = res.json()['candidates'][0]['content']['parts'][0]['text'].strip()
-            # 過濾所有多餘雜質字元
-            clean_text = text.replace("『", "").replace("』", "").replace('"', '').replace("「", "").replace("」", "").replace("。", "").replace("*", "")
+            clean_text = text.replace("『", "").replace("』", "").replace('"', '').replace("「", "").replace("環境", "").replace("」", "").replace("。", "").replace("*", "")
             if "，" in clean_text or "," in clean_text:
                 return clean_text
     except Exception as e:
@@ -90,34 +88,34 @@ def get_gemini_quote():
 
 def generate_morning_image(text_content, colors):
     img = None
-    # 🌟 修正點二：捨棄壞掉的舊接口，改用保證高清明亮的精選 Picsum 大自然暖色系圖庫庫存
-    bright_ids = [10, 15, 26, 28, 48, 54, 57, 116, 134, 142, 195, 200, 219, 230, 238, 260, 326, 342, 367, 404]
-    random.shuffle(bright_ids)
-    
-    for img_id in bright_ids:
-        try:
-            bg_url = f"https://picsum.photos/id/{img_id}/800/600"
-            img_res = requests.get(bg_url, timeout=5, stream=True)
-            if img_res.status_code == 200:
-                from io import BytesIO
-                img = Image.open(BytesIO(img_res.content)).convert("RGB")
-                break
-        except: continue
+    # 🌟 圖庫完全換血：使用 Unsplash 開發者端點，鎖定高亮、高清的陽光大自然主題
+    try:
+        bg_url = "https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=800&h=600&q=80"
+        # 額外準備幾個陽光備用網址隨機抽，確保每天背景不同
+        random_bgs = [
+            "https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=800&h=600&q=80", # 陽光山谷
+            "https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?auto=format&fit=crop&w=800&h=600&q=80", # 陽光森林
+            "https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?auto=format&fit=crop&w=800&h=600&q=80", # 晨霧日出
+            "https://images.unsplash.com/photo-1472214222541-d510753a49f8?auto=format&fit=crop&w=800&h=600&q=80"  # 晴朗草地
+        ]
+        img_res = requests.get(random.choice(random_bgs), timeout=6, stream=True)
+        if img_res.status_code == 200:
+            from io import BytesIO
+            img = Image.open(BytesIO(img_res.content)).convert("RGB")
+    except:
+        pass
 
     if not img:
-        img = Image.new("RGB", (800, 600), "#FFAD33") # 防線：若斷網，直接使用明亮暖橘色
+        img = Image.new("RGB", (800, 600), "#FFAD33")
 
     img = img.resize((800, 600))
     
-    # 🌟 核心修正：強制進行「畫面美化放大鏡」！大幅提升亮度與鮮豔度，杜絕黑白陰暗圖
-    enhancer_brightness = ImageEnhance.Brightness(img)
-    img = enhancer_brightness.enhance(1.25) # 提高 25% 亮度
-    enhancer_color = ImageEnhance.Color(img)
-    img = enhancer_color.enhance(1.2) # 提高 20% 色彩鮮豔度
+    # 🌟 畫面大美化：強制調高亮度 30% 與對比度 20%，徹底消滅黑白、陰暗照片
+    img = ImageEnhance.Brightness(img).enhance(1.3)
+    img = ImageEnhance.Contrast(img).enhance(1.2)
     
     image_width, _ = img.size
 
-    # 切割文字段落
     if "，" in text_content: lines = [line.strip() for line in text_content.split("，") if line.strip()]
     elif "," in text_content: lines = [line.strip() for line in text_content.split(",") if line.strip()]
     else:
@@ -140,16 +138,13 @@ def async_task(render_url):
         LINE_USER_ID = os.environ.get("LINE_USER_ID")
         if not all([LINE_ACCESS_TOKEN, LINE_USER_ID]): return
             
-        current_hour = time.strftime("%Y-%m-%d-%H")
-        
-        # 嘗試跟真正修正後的 Gemini API 索取 365 天全新不重複文案
         ai_text = get_gemini_quote()
         if ai_text:
             text_content = ai_text
             LAST_AI_TEXT = ai_text
             colors = random.choice(STATIC_ROUNDS)["colors"]
         else:
-            # 🌟 修正點三：萬一 AI 連線出錯，改採隨機抽籤，絕不再死板照順序抓第一則！
+            # 🌟 保底優化：即便 AI 失敗，也用隨機抽籤，不再永遠死板抓第一則
             backup_round = random.choice(STATIC_ROUNDS)
             text_content = backup_round["text"]
             colors = backup_round["colors"]
