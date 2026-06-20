@@ -62,7 +62,7 @@ def get_must_font(size):
     return ImageFont.load_default()
 
 def draw_styled_text(base_img, text, font, main_color, center_y, image_width, is_title=False):
-    """🔙 完全還原：回到最原始、完全沒問題的黑框位移畫法"""
+    """🔙 完全還原：回到最初、完全沒有任何問題的黑框粗描邊畫法"""
     try: text_w = ImageDraw.Draw(base_img).textlength(text, font=font)
     except: text_w = len(text) * font.size
     
@@ -74,19 +74,20 @@ def draw_styled_text(base_img, text, font, main_color, center_y, image_width, is
     x_pos = pad
     y_pos = pad
     
-    # 最早完美版本的陰影與描邊厚度
+    # 完美還原最初厚實的黑框描邊與陰影，保證文字在任何背景都絕對清晰
     shadow_offset = 5 if is_title else 3
-    txt_draw.text((x_pos + shadow_offset, y_pos + shadow_offset), text, font=font, fill=(0, 0, 0, 180))
+    txt_draw.text((x_pos + shadow_offset, y_pos + shadow_offset), text, font=font, fill=(0, 0, 0, 200))
     
     border_thickness = 5 if is_title else 3
     for dx in range(-border_thickness, border_thickness + 1):
         for dy in range(-border_thickness, border_thickness + 1):
             if dx*dx + dy*dy <= border_thickness*border_thickness:
-                txt_draw.text((x_pos + dx, y_pos + dy), text, font=font, fill="#FFFFFF")
+                txt_draw.text((x_pos + dx, y_pos + dy), text, font=font, fill="#000000")
                 
+    # 填入最核心的主色字體（黃/白/粉等）
     txt_draw.text((x_pos, y_pos), text, font=font, fill=main_color)
     
-    # 完全恢復最初的微斜切排版
+    # 完全恢復原本舒適的微斜切排版 (-3度)
     skew_angle = 0.0 if is_title else -3.0
     rotated_txt = txt_img.rotate(skew_angle, resample=Image.BICUBIC, expand=True)
     r_w, r_h = rotated_txt.size
@@ -147,9 +148,10 @@ def generate_morning_image(text_content, colors):
     while len(lines) < 3: 
         lines.append("祝您喜樂安康")
 
-    # 🔙 恢復最初完美的黃金行距高度
+    # 🔙 完全還原：回到最初最舒適、絕不重疊、大小適中的字體大小
     font_line1, font_line2, font_line3 = get_must_font(65), get_must_font(36), get_must_font(34)
     
+    # 🔙 完全還原：第一、二、三行精確回到最初完全沒問題的 Y 軸高度（黃金行距）
     draw_styled_text(img, lines[0], font_line1, colors[0], 180, image_width, is_title=True)
     draw_styled_text(img, lines[1], font_line2, colors[1], 350, image_width, is_title=False)
     draw_styled_text(img, lines[2], font_line3, colors[2], 475, image_width, is_title=False)
@@ -207,7 +209,6 @@ def serve_image():
 
 @app.route("/trigger")
 def trigger():
-    """🎯 唯一修正點：只回傳純文字的 OK，徹底修復 cron-job 錯誤"""
     global IS_PROCESSING
     with PROCESS_LOCK:
         if IS_PROCESSING:
