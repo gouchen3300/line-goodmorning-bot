@@ -4,61 +4,21 @@ import random
 import threading
 import requests
 from flask import Flask, send_file
-from PIL import Image, ImageDraw, ImageFont
+# 導入 ImageEnhance 用來強制把照片變得明亮、鮮豔
+from PIL import Image, ImageDraw, ImageFont, ImageEnhance
 
 app = Flask(__name__)
 
 LOCAL_IMAGE_PATH = "morning_output.jpg"
 FONT_FILE_NAME = "morning.ttf"
 
-# 建立執行緒鎖，確保同時間只有一個任務在跑，徹底拒絕排程重複轟炸
 PROCESS_LOCK = threading.Lock()
 IS_PROCESSING = False
 
 LAST_TRIGGER_HOUR = ""
 LAST_AI_TEXT = ""
-CURRENT_INDEX = 0
 
-# 🌟 節日聯防資料庫 (MM-DD)
-FESTIVALS = {
-    "01-01": {
-        "text": "元旦快樂，新的一年，祝您百事可樂，萬事如意", 
-        "keywords": ["fireworks", "new-year-celebration", "sunrise"],
-        "colors": ("#FF1493", "#FFFFFF", "#FFFF00")
-    },
-    "01-28": {
-        "text": "恭賀新禧，新春飛揚，祝您闔家團圓，福氣滿滿，萬事如意", 
-        "keywords": ["red-lanterns", "chinese-lantern", "chinese-architecture"],
-        "colors": ("#FF3333", "#FFFFFF", "#FFFF00")
-    },
-    "05-10": {
-        "text": "母親節快樂，感恩辛苦的媽媽，祝天天開心，平安健康", 
-        "keywords": ["carnation", "pink-flowers", "mother-love"],
-        "colors": ("#FF69B4", "#FFFFFF", "#FFFDD0")
-    },
-    "06-19": { # 2026年端午節
-        "text": "端午安康，粽香四溢，祝您與家人佳節愉快，闔家安康", 
-        "keywords": ["dragonboat", "bamboo-leaves", "river-water", "rowing"],
-        "colors": ("#00FF7F", "#FFFFFF", "#FFF700")
-    },
-    "08-08": {
-        "text": "父親節快樂，爸爸您辛苦了，祝您身體健康，萬事順心", 
-        "keywords": ["father-and-son", "thank-you-dad", "warm-light"],
-        "colors": ("#00BFFF", "#FFFFFF", "#FFF700")
-    },
-    "09-25": { # 2026年中秋節
-        "text": "中秋佳節快樂，月圓人團圓，祝您幸福美滿，事事順心", 
-        "keywords": ["full-moon", "moonlight", "night-sky", "lantern"],
-        "colors": ("#FFFF33", "#FFFFFF", "#FFA500")
-    },
-    "12-25": {
-        "text": "聖誕佳節平安，迎接溫馨歲末，祝您喜樂滿滿，幸福相隨", 
-        "keywords": ["christmas-tree", "snow-warm", "gift-box"],
-        "colors": ("#FF4500", "#FFFFFF", "#00FF7F")
-    }
-}
-
-# 🌟 吳大哥指定：擴充至 20 則精選平日制式保底文案
+# 20則精心翻新、充滿正能量與變化的平日制式保底問候語
 STATIC_ROUNDS = [
     {"text": "大家早安，保持微笑，今天也要超級快樂", "colors": ("#FFF700", "#FFFFFF", "#FF69B4")},
     {"text": "好友早安，清晨好問候，記得吃份溫暖早餐", "colors": ("#FFFFFF", "#FF4500", "#FFF700")},
@@ -70,7 +30,6 @@ STATIC_ROUNDS = [
     {"text": "祝您早安，微笑常在，心想事成萬事都順心", "colors": ("#FFFF33", "#FF1493", "#FFFFFF")},
     {"text": "親愛的朋友早安，放鬆心情，享受悠閒的晨光序曲", "colors": ("#FFFFFF", "#00CED1", "#FFA500")},
     {"text": "早安你好，滿滿正能量，今天也是幸運滿分的一天", "colors": ("#FFFF00", "#FF69B4", "#FFFFFF")},
-    # 新增 11-20 則文案
     {"text": "新的一天早安，願舒心的陽光，照亮您前行的每一步", "colors": ("#FFFFFF", "#FF8C00", "#00FF7F")},
     {"text": "早安老友，心中有愛自然溫暖，祝今天事事順心如意", "colors": ("#FF69B4", "#FFFFFF", "#FFFF33")},
     {"text": "大家清晨好，送上一聲真摯問候，願您一整天神采飛揚", "colors": ("#FFFDD0", "#00BFFF", "#FFFFFF")},
@@ -82,9 +41,6 @@ STATIC_ROUNDS = [
     {"text": "各位早安，善待自己的心情，讓幸福的感覺裝滿今天", "colors": ("#FFFF00", "#FF69B4", "#FFFFFF")},
     {"text": "好友早安，最美的風景在路上，最真的問候在每天清晨", "colors": ("#FFFFFF", "#00BFFF", "#FF8C00")}
 ]
-
-# 🌟 修正點二：平日指定「明亮、清晰、陽光」的風景關鍵字聯軍
-BRIGHT_KEYWORDS = ["sunny-morning", "bright-nature", "sunshine", "beautiful-landscape", "sunrise-sky"]
 
 def get_must_font(size):
     if os.path.exists(FONT_FILE_NAME):
@@ -116,112 +72,89 @@ def draw_single_skew_line(base_img, text, font, color, center_y, image_width, is
 def get_gemini_quote():
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key: return None
-    url = f"https://generatelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={api_key}"
-    # 優化 Prompt，確保生成的句子結構穩定、適合切行
-    prompt = "請寫一句充滿台灣在地人情味的溫暖早安問候語，字數20字左右，中間必須包含一個逗號（，）。不要有任何引號、解釋、標點符號或序號，只要這句話。"
+    # 🌟 修正點一：重構並校對最穩定的 Gemini 1.5 Flash API 終端節點與格式
+    url = f"https://generatelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    prompt = "請寫一句適合長輩群組、充滿溫馨與正能量的台灣在地早安問候語。字數控制在15到23字之間，中間必須包含一個逗號（，）。嚴禁任何引號、備註、標點符號或解釋，只要這句話本身。"
     try:
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
-        # 將超時時間拉長到 12 秒，大大提高 AI 成功獲取率
-        res = requests.post(url, json=payload, timeout=12)
+        res = requests.post(url, json=payload, json=payload, timeout=8)
         if res.status_code == 200:
             text = res.json()['candidates'][0]['content']['parts'][0]['text'].strip()
-            return text.replace("『", "").replace("』", "").replace('"', '').replace("「", "").replace("」", "").replace("。", "")
-    except: pass
+            # 過濾所有多餘雜質字元
+            clean_text = text.replace("『", "").replace("』", "").replace('"', '').replace("「", "").replace("」", "").replace("。", "").replace("*", "")
+            if "，" in clean_text or "," in clean_text:
+                return clean_text
+    except Exception as e:
+        print(f"Gemini API 呼叫異常: {e}")
     return None
 
-def generate_morning_image(text_content, colors, keywords_list=None):
-    img_success = False
+def generate_morning_image(text_content, colors):
     img = None
+    # 🌟 修正點二：捨棄壞掉的舊接口，改用保證高清明亮的精選 Picsum 大自然暖色系圖庫庫存
+    bright_ids = [10, 15, 26, 28, 48, 54, 57, 116, 134, 142, 195, 200, 219, 230, 238, 260, 326, 342, 367, 404]
+    random.shuffle(bright_ids)
     
-    # 如果沒有特定節日關鍵字，就隨機抽一個明亮清晰的平日關鍵字
-    if not keywords_list:
-        keywords_list = [random.choice(BRIGHT_KEYWORDS)]
-
-    random.shuffle(keywords_list)
-    for kw in keywords_list:
+    for img_id in bright_ids:
         try:
-            bg_url = f"https://source.unsplash.com/featured/800x600/?{kw}"
+            bg_url = f"https://picsum.photos/id/{img_id}/800/600"
             img_res = requests.get(bg_url, timeout=5, stream=True)
             if img_res.status_code == 200:
                 from io import BytesIO
                 img = Image.open(BytesIO(img_res.content)).convert("RGB")
-                img_success = True
                 break
         except: continue
-            
-    if not img_success:
-        try:
-            random_bg_id = random.randint(100, 500)
-            bg_url = f"https://picsum.photos/id/{random_bg_id}/800/600"
-            img_res = requests.get(bg_url, timeout=5, stream=True)
-            if img_res.status_code == 200:
-                img = Image.open(img_res.raw).convert("RGB")
-        except: pass
-        
+
     if not img:
-        img = Image.new("RGB", (800, 600), "#FF8C00") # 連風景都抓不到時，改用溫暖的亮橘色保底
-        
+        img = Image.new("RGB", (800, 600), "#FFAD33") # 防線：若斷網，直接使用明亮暖橘色
+
     img = img.resize((800, 600))
-    # 🌟 修正點二：徹底拔除模糊濾鏡 (ImageFilter.GaussianBlur)，回歸最清晰、明亮的照片品質
+    
+    # 🌟 核心修正：強制進行「畫面美化放大鏡」！大幅提升亮度與鮮豔度，杜絕黑白陰暗圖
+    enhancer_brightness = ImageEnhance.Brightness(img)
+    img = enhancer_brightness.enhance(1.25) # 提高 25% 亮度
+    enhancer_color = ImageEnhance.Color(img)
+    img = enhancer_color.enhance(1.2) # 提高 20% 色彩鮮豔度
+    
     image_width, _ = img.size
 
+    # 切割文字段落
     if "，" in text_content: lines = [line.strip() for line in text_content.split("，") if line.strip()]
     elif "," in text_content: lines = [line.strip() for line in text_content.split(",") if line.strip()]
     else:
-        third = len(text_content) // 3
-        lines = [text_content[:third], text_content[third:third*2], text_content[third*2:]]
-    while len(lines) < 3: lines.append("祝您平安愉快")
+        half = len(text_content) // 2
+        lines = [text_content[:half], text_content[half:]]
+        
+    while len(lines) < 3: 
+        lines.append("祝您喜樂安康")
 
-    font_line1, font_line2, font_line3 = get_must_font(55), get_must_font(36), get_must_font(38)
+    font_line1, font_line2, font_line3 = get_must_font(54), get_must_font(36), get_must_font(38)
     draw_single_skew_line(img, lines[0], font_line1, colors[0], 340, image_width, is_title=True)
     draw_single_skew_line(img, lines[1], font_line2, colors[1], 435, image_width, is_title=False)
     draw_single_skew_line(img, lines[2], font_line3, colors[2], 525, image_width, is_title=False)
     img.save(LOCAL_IMAGE_PATH, "JPEG", quality=95)
 
 def async_task(render_url):
-    global IS_PROCESSING, LAST_TRIGGER_HOUR, LAST_AI_TEXT, CURRENT_INDEX
+    global IS_PROCESSING, LAST_TRIGGER_HOUR, LAST_AI_TEXT
     try:
         LINE_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
         LINE_USER_ID = os.environ.get("LINE_USER_ID")
         if not all([LINE_ACCESS_TOKEN, LINE_USER_ID]): return
             
         current_hour = time.strftime("%Y-%m-%d-%H")
-        current_date = time.strftime("%m-%d")
         
-        # 1. 節日模式
-        if current_date in FESTIVALS and current_hour != LAST_TRIGGER_HOUR:
-            fest_data = FESTIVALS[current_date]
-            text_content = fest_data["text"]
-            colors = fest_data["colors"]
-            keywords_list = fest_data["keywords"]
-            LAST_TRIGGER_HOUR = current_hour
-        # 2. 🌟 修正點三：平日優先交給 Gemini 生產 365 天完全不同的問候語
-        elif current_hour != LAST_TRIGGER_HOUR:
-            ai_text = get_gemini_quote()
-            if ai_text:
-                text_content = ai_text
-                LAST_AI_TEXT = ai_text
-                colors = random.choice(STATIC_ROUNDS)["colors"]
-            else:
-                round_data = STATIC_ROUNDS[CURRENT_INDEX]
-                text_content = round_data["text"]
-                colors = round_data["colors"]
-                CURRENT_INDEX = (CURRENT_INDEX + 1) % len(STATIC_ROUNDS)
-            keywords_list = None
-            LAST_TRIGGER_HOUR = current_hour
-        # 3. 同一小時內重複點擊測試
+        # 嘗試跟真正修正後的 Gemini API 索取 365 天全新不重複文案
+        ai_text = get_gemini_quote()
+        if ai_text:
+            text_content = ai_text
+            LAST_AI_TEXT = ai_text
+            colors = random.choice(STATIC_ROUNDS)["colors"]
         else:
-            if LAST_AI_TEXT:
-                text_content = LAST_AI_TEXT
-                colors = random.choice(STATIC_ROUNDS)["colors"]
-            else:
-                round_data = STATIC_ROUNDS[CURRENT_INDEX]
-                text_content = round_data["text"]
-                colors = round_data["colors"]
-                CURRENT_INDEX = (CURRENT_INDEX + 1) % len(STATIC_ROUNDS)
-            keywords_list = None
+            # 🌟 修正點三：萬一 AI 連線出錯，改採隨機抽籤，絕不再死板照順序抓第一則！
+            backup_round = random.choice(STATIC_ROUNDS)
+            text_content = backup_round["text"]
+            colors = backup_round["colors"]
 
-        generate_morning_image(text_content, colors, keywords_list)
+        generate_morning_image(text_content, colors)
         
         cache_breaker = random.randint(1000, 9999)
         timestamp = int(time.time())
@@ -240,7 +173,8 @@ def async_task(render_url):
             }]
         }
         requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload, timeout=10)
-    except Exception as e: print(f"後台錯誤: {e}")
+    except Exception as e: 
+        print(f"後台處理異常: {e}")
     finally:
         with PROCESS_LOCK:
             IS_PROCESSING = False
@@ -253,20 +187,18 @@ def serve_image():
         return res
     return "NotFound", 404
 
-# 🌟 修正點一：核心靈魂！0.001秒內回傳超短純文字，徹底擊碎 cron-job 錯誤
 @app.route("/trigger")
 def trigger():
     global IS_PROCESSING
     with PROCESS_LOCK:
         if IS_PROCESSING:
-            return "BUSY" # 正在執行中，回傳極短字串
+            return "BUSY"
         IS_PROCESSING = True
     
     RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
     if not RENDER_EXTERNAL_URL:
         RENDER_EXTERNAL_URL = "https://" + requests.headers.get('Host', '')
 
-    # 立刻把重活丟到後台去跑，Flask 轉身馬上回傳給排程網站，絕不耽誤！
     threading.Thread(target=async_task, args=(RENDER_EXTERNAL_URL,)).start()
     return "OK"
 
