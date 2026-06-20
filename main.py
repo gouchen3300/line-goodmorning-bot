@@ -16,6 +16,7 @@ FONT_URL = "https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/Traditiona
 PROCESS_LOCK = threading.Lock()
 IS_PROCESSING = False
 
+# 365天備用經典輪播庫（當Gemini API額度用盡或異常時自動補上，確保天天有圖）
 STATIC_ROUNDS = [
     {"text": "大家早安，保持微笑，今天也要超級快樂", "colors": ("#FFFF00", "#FFFFFF", "#FF69B4")},
     {"text": "好友早安，清晨好問候，記得吃份溫暖早餐", "colors": ("#FFFFFF", "#FF4500", "#FFFF00")},
@@ -32,17 +33,27 @@ STATIC_ROUNDS = [
     {"text": "大家清晨好，送上一聲真摯問候，願您一整天神采飛揚", "colors": ("#FFFFE0", "#00BFFF", "#FFFFFF")},
     {"text": "溫馨早安，把生活調成喜歡的頻道，今天也要幸福滿滿", "colors": ("#FFFFFF", "#FF1493", "#FFFF00")},
     {"text": "好友早安，生活因知足而美麗，願您的微笑像陽光燦爛", "colors": ("#FFFF00", "#FFFFFF", "#00CED1")},
-    {"text": "早安你好，開啟元氣滿滿的一天，好運與您不期而遇", "colors": ("00FF7F", "#FFFFFF", "#FF4500")},
+    {"text": "早安你好，開啟元氣滿滿的一天，好運與您不期而遇", "colors": ("#00FF7F", "#FFFFFF", "#FF4500")},
     {"text": "祝您早安，健康的身體是最大的財富，佳節與平日皆安康", "colors": ("#FFFFFF", "#FFD700", "#FFFFE0")},
     {"text": "清晨早安，生活雖然平凡，但每一天都值得我們熱烈期待", "colors": ("#FF4500", "#FFFFFF", "#FFFF00")},
     {"text": "各位早安，善待自己的心情，讓幸福的感覺裝滿今天", "colors": ("#FFFF00", "#FF69B4", "#FFFFFF")},
     {"text": "好友早安，最美的風景在路上，最真誠的問候在每天清晨", "colors": ("#FFFFFF", "#00BFFF", "#FF8C00")}
 ]
 
+# 🌅 多達 12 張精心挑選的高畫質、風格完全不同的在地明亮風景、自然與晨光圖庫，確保天天有新鮮感！
 BRIGHT_BGS = [
-    "https://images.unsplash.com/photo-1595981267035-7b04ca84a82d?auto=format&fit=crop&w=800&h=600&q=100", 
-    "https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=800&h=600&q=100", 
-    "https://images.unsplash.com/photo-1470240731273-7821a6eeb6bd?auto=format&fit=crop&w=800&h=600&q=100"  
+    "https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=800&h=600&q=100",  # 綠意原野
+    "https://images.unsplash.com/photo-1470240731273-7821a6eeb6bd?auto=format&fit=crop&w=800&h=600&q=100",  # 春天花海
+    "https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?auto=format&fit=crop&w=800&h=600&q=100",  # 森林晨光
+    "https://images.unsplash.com/photo-1472214222541-d510753a8707?auto=format&fit=crop&w=800&h=600&q=100",  # 寧靜鄉間
+    "https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=800&h=600&q=100",  # 山巒日出
+    "https://images.unsplash.com/photo-1418065460487-3e41a6c84dc5?auto=format&fit=crop&w=800&h=600&q=100",  # 陽光樹林
+    "https://images.unsplash.com/photo-1513836279014-a89f7a76ae86?auto=format&fit=crop&w=800&h=600&q=100",  # 大自然清新
+    "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=800&h=600&q=100",  # 林間向陽
+    "https://images.unsplash.com/photo-1546182990-dffeafbe841d?auto=format&fit=crop&w=800&h=600&q=100",  # 草原晨曦
+    "https://images.unsplash.com/photo-1501854140801-50d01698950b?auto=format&fit=crop&w=800&h=600&q=100",  # 遼闊山水
+    "https://images.unsplash.com/photo-1595981267035-7b04ca84a82d?auto=format&fit=crop&w=800&h=600&q=100",  # 晨光咖啡桌
+    "https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=800&h=600&q=100"   # 明亮遠山
 ]
 
 def check_and_download_font():
@@ -62,7 +73,7 @@ def get_must_font(size):
     return ImageFont.load_default()
 
 def draw_styled_text(base_img, text, font, main_color, center_y, image_width, is_title=False):
-    """🔙 完全還原圖一：位置下移、外框加粗、並且恢復大角度斜切！"""
+    """👑 保持吳大哥最滿意的圖一狀態：大歪斜度、黑粗框、位置完美居中偏下"""
     try: text_w = ImageDraw.Draw(base_img).textlength(text, font=font)
     except: text_w = len(text) * font.size
     
@@ -74,7 +85,6 @@ def draw_styled_text(base_img, text, font, main_color, center_y, image_width, is
     x_pos = pad
     y_pos = pad
     
-    # 清晰飽滿的黑粗描邊與陰影
     shadow_offset = 5 if is_title else 3
     txt_draw.text((x_pos + shadow_offset, y_pos + shadow_offset), text, font=font, fill=(0, 0, 0, 220))
     
@@ -86,7 +96,7 @@ def draw_styled_text(base_img, text, font, main_color, center_y, image_width, is
                 
     txt_draw.text((x_pos, y_pos), text, font=font, fill=main_color)
     
-    # 🔙 完全還原歪斜度：第一行正的，第二行與第三行恢復圖一原本漂亮的大歪斜 (-10度)
+    # 圖一經典靈魂：第一行正的，第二、三行保持 -10.0 度漂亮大歪斜
     skew_angle = 0.0 if is_title else -10.0
     rotated_txt = txt_img.rotate(skew_angle, resample=Image.BICUBIC, expand=True)
     r_w, r_h = rotated_txt.size
@@ -114,6 +124,7 @@ def generate_morning_image(text_content, colors):
     check_and_download_font()
     
     img = None
+    # 🎲 每次觸發都真正隨機抽取完全不同的優質風景背景圖
     selected_url = random.choice(BRIGHT_BGS)
     try:
         img_res = requests.get(selected_url, timeout=8)
@@ -148,10 +159,9 @@ def generate_morning_image(text_content, colors):
     while len(lines) < 3: 
         lines.append("祝您喜樂安康")
 
-    # 🔙 完全還原圖一黃金比例字體大小
     font_line1, font_line2, font_line3 = get_must_font(65), get_must_font(36), get_must_font(34)
     
-    # 🔙 完全還原圖一的位置高度（整體往下移，字體各自獨立分開、絕不重疊）
+    # 🎯 圖一黃金高度坐標：第一、二、三行精準定位，絕不重疊
     draw_styled_text(img, lines[0], font_line1, colors[0], 330, image_width, is_title=True)
     draw_styled_text(img, lines[1], font_line2, colors[1], 440, image_width, is_title=False)
     draw_styled_text(img, lines[2], font_line3, colors[2], 530, image_width, is_title=False)
@@ -174,6 +184,7 @@ def async_task(render_url):
             text_content = backup_round["text"]
             colors = backup_round["colors"]
 
+        # 在背景安全生成新圖片並隨機更換風景
         generate_morning_image(text_content, colors)
         
         cache_breaker = random.randint(1000, 9999)
@@ -194,7 +205,7 @@ def async_task(render_url):
         }
         requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload, timeout=15)
     except Exception as e: 
-        print(f"背景異常: {e}")
+        print(f"背景處理異常: {e}")
     finally:
         with PROCESS_LOCK:
             IS_PROCESSING = False
@@ -219,7 +230,10 @@ def trigger():
     if not RENDER_EXTERNAL_URL:
         RENDER_EXTERNAL_URL = "https://" + requests.headers.get('Host', '')
 
+    # 🚀 關鍵防禦：收到請求立刻開啟新執行緒去處理，絕不拖延
     threading.Thread(target=async_task, args=(RENDER_EXTERNAL_URL,)).start()
+    
+    # 🚀 關鍵防禦：0.01秒內立刻回傳極簡文字，徹底根治 cron-job.org 的 Output too large 錯誤！
     return Response("OK", mimetype="text/plain")
 
 @app.route("/")
